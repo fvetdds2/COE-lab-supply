@@ -1,15 +1,3 @@
-"""Lab Supply Inventory for the Center of Excellence for Clinical and Translational Research.
-
-Streamlit front end for the "COE lab inventory" Google Sheet.
-
-Run locally:   streamlit run app.py
-Secrets:       .streamlit/secrets.toml  (see secrets.toml.example and README.md)
-No secrets?    The app opens in demo mode with example counts, so you can try it.
-
-Works on phones and computers. Every receive, use, count and edit is saved with the
-staff member's initials and the date in the sheet's Change log tab.
-"""
-
 from __future__ import annotations
 
 import html
