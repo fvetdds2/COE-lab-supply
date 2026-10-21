@@ -1,4 +1,6 @@
-"""COE lab inventory tracker - Streamlit front end for the "COE lab inventory" Google Sheet.
+"""Lab Supply Inventory for the Center of Excellence for Clinical and Translational Research.
+
+Streamlit front end for the "COE lab inventory" Google Sheet.
 
 Run locally:   streamlit run app.py
 Secrets:       .streamlit/secrets.toml  (see secrets.toml.example and README.md)
@@ -18,7 +20,8 @@ import streamlit as st
 
 import inventory_core as ic
 
-st.set_page_config(page_title="COE Lab Inventory", page_icon="🧪", layout="wide",
+APP_NAME = "The Center of Excellence for Clinical and Translational Research Lab Supply Inventory"
+st.set_page_config(page_title=APP_NAME, page_icon="🧪", layout="wide",
                    initial_sidebar_state="collapsed")
 
 METER = "#b8237a"  # magenta: meter fill and covered runs (5.9:1 on white)
@@ -133,7 +136,7 @@ def get_sheet() -> tuple[ic.InventorySheet, str]:
     try:
         return live_sheet(st.secrets["sheet_url"], account), ""
     except Exception as exc:  # shown on the page instead of a traceback; retried on reload
-        st.title("COE Lab Inventory")
+        st.title(APP_NAME)
         st.error(connection_help(exc))
         st.stop()
 
@@ -190,15 +193,16 @@ PAGE_CSS = """
   --magenta: #b8237a; --track: #e7ebf0;
 }
 .block-container, [data-testid="stMainBlockContainer"] {
-  max-width: 1040px; padding-top: 2rem; padding-bottom: 4rem;
+  max-width: 1040px; padding-top: 4.5rem; padding-bottom: 4rem;
 }
 .num { font-variant-numeric: tabular-nums; }
 
 /* header */
 .app-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;
             margin-bottom: 4px; }
-.app-title { font-size: 30px; line-height: 1.15; font-weight: 700; color: var(--ink); margin: 0; }
-.app-sub { color: var(--muted); font-size: 15px; margin: 4px 0 0; }
+.app-title { font-size: 28px; line-height: 1.2; font-weight: 700; color: var(--ink); margin: 0;
+             max-width: 760px; text-wrap: balance; }
+.app-sub { color: var(--muted); font-size: 15px; margin: 8px 0 0; }
 .conn { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600;
         color: var(--muted); white-space: nowrap; padding-top: 8px; }
 .conn i { width: 8px; height: 8px; border-radius: 50%; background: #17a34a; display: inline-block; }
@@ -262,7 +266,7 @@ PAGE_CSS = """
 .st-key-meter_filter [role="radiogroup"] { flex-wrap: wrap; overflow: visible; }
 
 @media (max-width: 760px) {
-  .block-container, [data-testid="stMainBlockContainer"] { padding: 1.2rem 1rem 3rem; }
+  .block-container, [data-testid="stMainBlockContainer"] { padding: 4rem 1rem 3rem; }
   .st-key-topbar [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: 8px; }
   .st-key-topbar [data-testid="stColumn"] { min-width: 0 !important; width: auto !important; }
   .st-key-topbar [data-testid="stColumn"]:nth-child(1) { flex: 1 1 0 !important; }
@@ -274,7 +278,7 @@ PAGE_CSS = """
                                       gap: 6px; }
   .st-key-view button { border-radius: 999px !important; margin: 0 !important; width: 100%; }
   .app-head { flex-direction: column; gap: 2px; }
-  .app-title { font-size: 26px; }
+  .app-title { font-size: 22px; }
   .conn { padding-top: 2px; }
   .hero { grid-template-columns: 1fr; grid-template-areas: "main" "plates" "notes";
           padding: 18px 16px 16px; gap: 16px; }
@@ -441,7 +445,7 @@ connection = ('<span class="conn demo"><i></i>Demo data</span>' if demo
               else '<span class="conn"><i></i>Live from Google Sheets</span>')
 st.markdown(
     '<header class="app-head"><div>'
-    '<div class="app-title" role="heading" aria-level="1">COE Lab Inventory</div>'
+    f'<div class="app-title" role="heading" aria-level="1">{APP_NAME}</div>'
     '<p class="app-sub">Supplies for whole-blood DNA extraction on the KingFisher Apex</p>'
     f"</div>{connection}</header>",
     unsafe_allow_html=True,
