@@ -20,7 +20,9 @@ import streamlit as st
 
 import inventory_core as ic
 
-APP_NAME = "The Center of Excellence for Clinical and Translational Research Lab Supply Inventory"
+CENTER_NAME = "The Center of Excellence for Clinical and Translational Research"
+APP_TITLE = "Laboratory Supply Inventory"
+APP_NAME = f"{CENTER_NAME} {APP_TITLE}"
 st.set_page_config(page_title=APP_NAME, page_icon="🧪", layout="wide",
                    initial_sidebar_state="collapsed")
 
@@ -197,14 +199,15 @@ PAGE_CSS = """
 }
 .num { font-variant-numeric: tabular-nums; }
 
-/* header */
-.app-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;
-            margin-bottom: 4px; }
-.app-title { font-size: 28px; line-height: 1.2; font-weight: 700; color: var(--ink); margin: 0;
-             max-width: 760px; text-wrap: balance; }
-.app-sub { color: var(--muted); font-size: 15px; margin: 8px 0 0; }
+/* header: center name on the first line, app name on the second */
+.app-head { margin-bottom: 8px; }
+.app-title { font-size: 28px; line-height: 1.22; font-weight: 700; color: var(--ink); margin: 0; }
+.app-title span { display: block; }
+.app-subrow { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline;
+              gap: 4px 16px; margin-top: 8px; }
+.app-sub { color: var(--muted); font-size: 15px; margin: 0; }
 .conn { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600;
-        color: var(--muted); white-space: nowrap; padding-top: 8px; }
+        color: var(--muted); white-space: nowrap; }
 .conn i { width: 8px; height: 8px; border-radius: 50%; background: #17a34a; display: inline-block; }
 .conn.demo i { background: #e0a100; }
 
@@ -277,9 +280,8 @@ PAGE_CSS = """
   .st-key-view [role="radiogroup"] { display: grid !important; grid-template-columns: repeat(4, minmax(0, 1fr));
                                       gap: 6px; }
   .st-key-view button { border-radius: 999px !important; margin: 0 !important; width: 100%; }
-  .app-head { flex-direction: column; gap: 2px; }
-  .app-title { font-size: 22px; }
-  .conn { padding-top: 2px; }
+  .app-title { font-size: 21px; }
+  .app-subrow { flex-direction: column; align-items: flex-start; }
   .hero { grid-template-columns: 1fr; grid-template-areas: "main" "plates" "notes";
           padding: 18px 16px 16px; gap: 16px; }
   .hero-notes { border-top: 1px solid var(--line); padding-top: 14px; }
@@ -444,10 +446,10 @@ st.markdown(PAGE_CSS, unsafe_allow_html=True)
 connection = ('<span class="conn demo"><i></i>Demo data</span>' if demo
               else '<span class="conn"><i></i>Live from Google Sheets</span>')
 st.markdown(
-    '<header class="app-head"><div>'
-    f'<div class="app-title" role="heading" aria-level="1">{APP_NAME}</div>'
-    '<p class="app-sub">Supplies for whole-blood DNA extraction on the KingFisher Apex</p>'
-    f"</div>{connection}</header>",
+    '<header class="app-head">'
+    f'<div class="app-title" role="heading" aria-level="1"><span>{CENTER_NAME}</span><span>{APP_TITLE}</span></div>'
+    '<div class="app-subrow"><p class="app-sub">Supplies for whole-blood DNA extraction on the KingFisher Apex</p>'
+    f"{connection}</div></header>",
     unsafe_allow_html=True,
 )
 if "flash" in st.session_state:
