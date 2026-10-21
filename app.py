@@ -1,3 +1,13 @@
+"""COE lab inventory tracker - Streamlit front end for the "COE lab inventory" Google Sheet.
+
+Run locally:   streamlit run app.py
+Secrets:       .streamlit/secrets.toml  (see secrets.toml.example and README.md)
+No secrets?    The app opens in demo mode with example counts, so you can try it.
+
+Works on phones and computers. Every receive, use, count and edit is saved with the
+staff member's initials and the date in the sheet's Change log tab.
+"""
+
 from __future__ import annotations
 
 import html
@@ -63,15 +73,60 @@ def demo_sheet() -> ic.InventorySheet:
     return st.session_state.demo_sheet
 
 
-def get_sheet() -> tuple[ic.InventorySheet, bool]:
+def secrets_problem() -> str:
+    """Why the app cannot use the Google Sheet, or "" when the secrets look complete."""
     try:
-        has_secrets = "gcp_service_account" in st.secrets and "sheet_url" in st.secrets
-    except Exception:  # no secrets.toml at all
-        has_secrets = False
-    if not has_secrets:
-        return demo_sheet(), True
+        names = list(st.secrets.keys())
+    except Exception as exc:  # no secrets.toml, or one that is not valid TOML
+        text = str(exc)
+        if "No secrets found" in text:
+            return ("No secrets were found. On your computer or in Codespaces, put `secrets.toml` "
+                    "in the `.streamlit` folder next to app.py and restart the app. On Streamlit "
+                    "Cloud, paste it into the app's Settings → Secrets.")
+        return f"`secrets.toml` was found but could not be read: {text}"
+    if "gcp_service_account" not in names:
+        return "`secrets.toml` has no `[gcp_service_account]` section. Run make_secrets.py again."
+    if "sheet_url" not in names:
+        hint = ""
+        if "sheet_url" in st.secrets["gcp_service_account"]:
+            hint = " It is inside `[gcp_service_account]`; move it to the first line, above that section."
+        return "`secrets.toml` has no `sheet_url`." + hint
+    return ""
+
+
+def connection_help(exc: Exception) -> str:
+    """Plain-language fix for a failed connection to the Google Sheet."""
+    text = f"{type(exc).__name__}: {exc}"
+    low = text.lower()
+    if "has not been used" in low or "service_disabled" in low or "is disabled" in low:
+        tip = ("Turn on the **Google Sheets API** and **Google Drive API** in Google Cloud "
+               "project MMCCCLInventory, wait a minute, then reload.")
+    elif any(word in low for word in ("invalid_grant", "jwt", "pem", "private key", "invalid key")):
+        tip = ("The key in secrets.toml is damaged or was deleted. Create a new JSON key for the "
+               "service account and run make_secrets.py again.")
+    elif "notfound" in low or "404" in low:
+        tip = ("Check `sheet_url` in secrets.toml, and that the sheet is shared with the "
+               "service account email.")
+    elif "permission" in low or "403" in low:
+        tip = ("Share the COE lab inventory sheet with the service account email "
+               "(client_email in secrets.toml) as **Editor**.")
+    else:
+        tip = "Check the internet connection, then reload the page."
+    return f"Could not connect to the Google Sheet. {tip}\n\nDetails: `{text[:300]}`"
+
+
+def get_sheet() -> tuple[ic.InventorySheet, str]:
+    """The live sheet and "", or the demo sheet and the reason demo mode is on."""
+    problem = secrets_problem()
+    if problem:
+        return demo_sheet(), problem
     account = tuple(sorted(dict(st.secrets["gcp_service_account"]).items()))
-    return live_sheet(st.secrets["sheet_url"], account), False
+    try:
+        return live_sheet(st.secrets["sheet_url"], account), ""
+    except Exception as exc:  # shown on the page instead of a traceback; retried on reload
+        st.title("COE Lab Inventory")
+        st.error(connection_help(exc))
+        st.stop()
 
 
 @st.cache_data(ttl=REFRESH_SECONDS, show_spinner=False)
@@ -233,14 +288,14 @@ def needs_initials() -> bool:
 
 # --------------------------------------------------------------------------- page
 
-sheet, demo = get_sheet()
+sheet, demo_reason = get_sheet()
+demo = bool(demo_reason)
 st.markdown(PAGE_CSS, unsafe_allow_html=True)
 st.title("COE Lab Inventory")
 if "flash" in st.session_state:
     st.success(st.session_state.pop("flash"))
 if demo:
-    st.info("Demo mode: example counts, not your inventory. Add Google credentials to "
-            "`.streamlit/secrets.toml` to use the COE lab inventory sheet (see README).")
+    st.info("Demo mode: example counts, not your inventory.\n\n**Why:** " + demo_reason)
 
 top1, top2, top3 = st.columns([2, 2, 1], vertical_alignment="bottom")
 user = top1.text_input("Your initials", key="user", max_chars=8, placeholder="e.g. DS",
