@@ -1,3 +1,15 @@
+"""Lab Supply Inventory for the Center of Excellence for Clinical and Translational Research.
+
+Streamlit front end for the "COE lab inventory" Google Sheet.
+
+Run locally:   streamlit run app.py
+Secrets:       .streamlit/secrets.toml  (see secrets.toml.example and README.md)
+No secrets?    The app opens in demo mode with example counts, so you can try it.
+
+Works on phones and computers. Every receive, use, count and edit is saved with the
+staff member's initials and the date in the sheet's Change log tab.
+"""
+
 from __future__ import annotations
 
 import html
@@ -183,7 +195,7 @@ PAGE_CSS = """
   --magenta: #b8237a; --track: #e7ebf0;
 }
 .block-container, [data-testid="stMainBlockContainer"] {
-  max-width: 1040px; padding-top: 4.5rem; padding-bottom: 4rem;
+  max-width: 1180px; padding-top: 4.5rem; padding-bottom: 4rem;
 }
 .num { font-variant-numeric: tabular-nums; }
 
@@ -194,11 +206,11 @@ PAGE_CSS = """
 .mast-text { grid-area: text; min-width: 0; }
 .conn { grid-area: conn; }
 .mast-name { margin: 0; }
-.mast-center { display: block; font-size: 15px; font-weight: 500; line-height: 1.35;
+.mast-center { display: block; font-size: 19px; font-weight: 500; line-height: 1.35;
                color: var(--muted); }
-.mast-title { display: block; font-size: 32px; font-weight: 700; line-height: 1.15; letter-spacing: -0.4px;
+.mast-title { display: block; font-size: 38px; font-weight: 700; line-height: 1.15; letter-spacing: -0.4px;
               color: var(--ink); margin-top: 2px; }
-.conn { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600;
+.conn { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600;
         color: var(--muted); white-space: nowrap; align-self: start; padding: 6px 12px; border-radius: 999px;
         background: var(--paper); border: 1px solid var(--line); }
 .conn i { width: 8px; height: 8px; border-radius: 50%; background: #17a34a; display: inline-block; }
@@ -211,24 +223,24 @@ PAGE_CSS = """
         gap: 20px 40px; }
 .hero-main { grid-area: main; }
 .hero-notes { grid-area: notes; display: flex; flex-direction: column; gap: 8px; justify-content: center;
-              font-size: 15px; line-height: 1.45; color: var(--ink); }
+              font-size: 17px; line-height: 1.45; color: var(--ink); }
 .hero-plates { grid-area: plates; }
-.hero-big { font-size: 22px; color: var(--muted); line-height: 1.1; }
-.hero-big b { font-size: 60px; font-weight: 700; color: var(--ink); letter-spacing: -1.5px; margin-right: 8px; }
-.hero-sub { font-size: 16px; color: var(--ink); margin-top: 10px; line-height: 1.45; max-width: 42ch; }
+.hero-big { font-size: 26px; color: var(--muted); line-height: 1.1; }
+.hero-big b { font-size: 68px; font-weight: 700; color: var(--ink); letter-spacing: -1.5px; margin-right: 8px; }
+.hero-sub { font-size: 18px; color: var(--ink); margin-top: 10px; line-height: 1.45; max-width: 42ch; }
 .hero-notes .warn { color: #8a5300; font-weight: 600; }
 .plates { display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); gap: 7px; }
 .plate { aspect-ratio: 3 / 2; border-radius: 4px;
          background:
            radial-gradient(circle, rgba(255,255,255,0.45) 0 1.1px, transparent 1.4px) 0 0 / calc(100% / 12) calc(100% / 8),
            linear-gradient(90deg, var(--magenta) var(--f), var(--track) var(--f)); }
-.plate-key { display: flex; flex-wrap: wrap; gap: 6px 20px; font-size: 13px; color: var(--muted); margin-top: 12px; }
+.plate-key { display: flex; flex-wrap: wrap; gap: 6px 20px; font-size: 15px; color: var(--muted); margin-top: 12px; }
 .plate-key span { display: inline-flex; align-items: center; gap: 6px; }
 .plate-key i { width: 18px; height: 12px; border-radius: 3px; display: inline-block; }
 
 /* status pills */
 .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 8px;
-        border-radius: 999px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+        border-radius: 999px; font-size: 14.5px; font-weight: 600; white-space: nowrap; }
 .pill b { font-size: 11px; width: 14px; display: inline-flex; justify-content: center; }
 .ico-ring, .ico-half { width: 10px; height: 10px; border-radius: 50%; border: 1.6px solid currentColor;
                        box-sizing: border-box; display: inline-block; }
@@ -236,25 +248,31 @@ PAGE_CSS = """
 
 /* item list, grouped by category */
 .group { margin: 22px 0 0; }
-.group-title { font-size: 15px; font-weight: 700; color: var(--ink); margin: 0 0 8px 2px; }
+.group-title { font-size: 18px; font-weight: 700; color: var(--ink); margin: 0 0 8px 2px; }
 .group-title span { color: var(--muted); font-weight: 400; margin-left: 6px; }
 .group-list { background: var(--card); border: 1px solid var(--line); border-radius: 14px;
               padding: 2px 20px; }
 .item { padding: 14px 0 13px; }
 .item + .item { border-top: 1px solid var(--line); }
 .item-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-.item-name { font-size: 16px; font-weight: 600; color: var(--ink); line-height: 1.3; }
+.item-name { font-size: 18px; font-weight: 600; color: var(--ink); line-height: 1.3; }
 .bar { position: relative; height: 10px; border-radius: 5px; background: var(--track); margin: 10px 0 8px; }
 .bar.unknown { background: repeating-linear-gradient(135deg, #eef1f5 0 6px, #e2e6ec 6px 12px); }
 .bar .fill { height: 100%; border-radius: 5px; background: var(--magenta); }
 .bar .tick { position: absolute; top: -4px; width: 2px; height: 18px; border-radius: 1px;
              background: var(--ink); opacity: 0.7; }
-.item-meta { display: flex; flex-wrap: wrap; gap: 4px 20px; font-size: 14px; color: var(--muted); }
+.item-meta { display: flex; flex-wrap: wrap; gap: 4px 22px; font-size: 15.5px; color: var(--muted); }
 .item-meta b { color: var(--ink); font-weight: 700; }
 .item-meta .when { margin-left: auto; }
-.list-foot { font-size: 13px; color: var(--muted); margin: 14px 2px 0; }
+.list-foot { font-size: 15px; color: var(--muted); margin: 14px 2px 0; }
 
 /* Streamlit pieces */
+[data-testid="stWidgetLabel"] p { font-size: 16px !important; }
+.st-key-view button p, .st-key-meter_filter button p, .st-key-refresh button p,
+[data-testid="stPopover"] button p, [data-testid="stBaseButton-secondary"] p,
+[data-testid="stBaseButton-primary"] p { font-size: 16px; }
+input, textarea, [data-baseweb="select"] div { font-size: 16px !important; }
+[data-testid="stCaptionContainer"] p { font-size: 15px; }
 [data-testid="stForm"] { background: var(--card); border-radius: 14px; }
 [data-testid="stExpander"] details { background: var(--card); border-radius: 14px; }
 [data-testid="stMetricValue"] { font-variant-numeric: tabular-nums; }
@@ -273,20 +291,22 @@ PAGE_CSS = """
   .st-key-view [role="radiogroup"] { display: grid !important; grid-template-columns: repeat(4, minmax(0, 1fr));
                                       gap: 6px; }
   .st-key-view button { border-radius: 999px !important; margin: 0 !important; width: 100%; }
+  .st-key-view button { padding-left: 4px !important; padding-right: 4px !important; }
+  .st-key-view button p { font-size: 16px; }
   .masthead { grid-template-columns: 1fr; grid-template-areas: "text" "conn";
               padding: 20px 18px 18px; gap: 14px; border-radius: 16px; }
-  .mast-center { font-size: 13px; }
-  .conn { justify-self: start; font-size: 12px; padding: 4px 10px; }
+  .mast-center { font-size: 15px; }
+  .conn { justify-self: start; font-size: 13px; padding: 4px 10px; }
   .mast-title { font-size: 24px; }
   .hero { grid-template-columns: 1fr; grid-template-areas: "main" "plates" "notes";
           padding: 18px 16px 16px; gap: 16px; }
   .hero-notes { border-top: 1px solid var(--line); padding-top: 14px; }
-  .hero-big b { font-size: 48px; }
+  .hero-big b { font-size: 54px; }
   .hero-sub { max-width: none; }
   .plates { grid-template-columns: repeat(var(--cols-sm), minmax(0, 1fr)); gap: 5px; }
   .group-list { padding: 2px 14px; }
-  .item-name { font-size: 15px; }
-  .item-meta { gap: 2px 14px; font-size: 13px; }
+  .item-name { font-size: 17px; }
+  .item-meta { gap: 2px 14px; font-size: 15px; }
   .item-meta .when { margin-left: 0; width: 100%; }
   button[kind="primary"], button[kind="secondary"] { min-height: 2.75rem; }
 }
