@@ -199,15 +199,20 @@ PAGE_CSS = """
 }
 .num { font-variant-numeric: tabular-nums; }
 
-/* header: center name on the first line, app name on the second */
-.app-head { margin-bottom: 8px; }
-.app-title { font-size: 28px; line-height: 1.22; font-weight: 700; color: var(--ink); margin: 0; }
-.app-title span { display: block; }
-.app-subrow { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline;
-              gap: 4px 16px; margin-top: 8px; }
-.app-sub { color: var(--muted); font-size: 15px; margin: 0; }
+/* masthead: center name on the first line, app name on the second */
+.masthead { background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 20px; padding: 24px 28px;
+            display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "text conn";
+            gap: 12px 22px; align-items: center; margin: 0 0 20px; }
+.mast-text { grid-area: text; min-width: 0; }
+.conn { grid-area: conn; }
+.mast-name { margin: 0; }
+.mast-center { display: block; font-size: 15px; font-weight: 500; line-height: 1.35;
+               color: var(--muted); }
+.mast-title { display: block; font-size: 32px; font-weight: 700; line-height: 1.15; letter-spacing: -0.4px;
+              color: var(--ink); margin-top: 2px; }
 .conn { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600;
-        color: var(--muted); white-space: nowrap; }
+        color: var(--muted); white-space: nowrap; align-self: start; padding: 6px 12px; border-radius: 999px;
+        background: var(--paper); border: 1px solid var(--line); }
 .conn i { width: 8px; height: 8px; border-radius: 50%; background: #17a34a; display: inline-block; }
 .conn.demo i { background: #e0a100; }
 
@@ -280,8 +285,11 @@ PAGE_CSS = """
   .st-key-view [role="radiogroup"] { display: grid !important; grid-template-columns: repeat(4, minmax(0, 1fr));
                                       gap: 6px; }
   .st-key-view button { border-radius: 999px !important; margin: 0 !important; width: 100%; }
-  .app-title { font-size: 21px; }
-  .app-subrow { flex-direction: column; align-items: flex-start; }
+  .masthead { grid-template-columns: 1fr; grid-template-areas: "text" "conn";
+              padding: 20px 18px 18px; gap: 14px; border-radius: 16px; }
+  .mast-center { font-size: 13px; }
+  .conn { justify-self: start; font-size: 12px; padding: 4px 10px; }
+  .mast-title { font-size: 24px; }
   .hero { grid-template-columns: 1fr; grid-template-areas: "main" "plates" "notes";
           padding: 18px 16px 16px; gap: 16px; }
   .hero-notes { border-top: 1px solid var(--line); padding-top: 14px; }
@@ -446,10 +454,10 @@ st.markdown(PAGE_CSS, unsafe_allow_html=True)
 connection = ('<span class="conn demo"><i></i>Demo data</span>' if demo
               else '<span class="conn"><i></i>Live from Google Sheets</span>')
 st.markdown(
-    '<header class="app-head">'
-    f'<div class="app-title" role="heading" aria-level="1"><span>{CENTER_NAME}</span><span>{APP_TITLE}</span></div>'
-    '<div class="app-subrow"><p class="app-sub">Supplies for whole-blood DNA extraction on the KingFisher Apex</p>'
-    f"{connection}</div></header>",
+    '<header class="masthead"><div class="mast-text">'
+    f'<div class="mast-name" role="heading" aria-level="1"><span class="mast-center">{CENTER_NAME}</span>'
+    f'<span class="mast-title">{APP_TITLE}</span></div></div>'
+    f"{connection}</header>",
     unsafe_allow_html=True,
 )
 if "flash" in st.session_state:
