@@ -45,7 +45,7 @@ EDITABLE_FIELDS = [h for h in HEADERS if h not in ("Item ID", "Last checked", "C
 STATUS_OPTIONS = ["In stock", "Low", "Ordered", "Out of stock"]
 
 # Starter list for MagMAX DNA Multi-Sample Ultra 2.0 on the KingFisher Apex,
-# 200 uL whole blood per sample. Usage per sample/run follows the CECTR supply list.
+# 200 uL whole blood per sample. Usage per sample/run follows the COE lab supply list.
 STARTER_ITEMS = [
     # item, category, cat no, unit, per sample, per run, target
     ("MagMAX DNA Multi-Sample Ultra 2.0 Kit", "Extraction kit", "A36570", "kit", 1 / 200, None, None),
@@ -126,13 +126,18 @@ def column_letter(index: int) -> str:
     return letters
 
 
-def auto_status(on_hand: float | None, reorder_at: float | None, current: str = "") -> str:
-    """Status from the count; a manual 'Ordered' sticks until stock is back above the reorder point."""
+def auto_status(on_hand: float | None, reorder_at: float | None, current: str = "",
+                target: float | None = None) -> str:
+    """Status from the count; a manual 'Ordered' sticks until stock is back above the reorder point.
+
+    Low means at or below the reorder level (as in Quartzy's min stock), unless the count
+    already meets the item's target.
+    """
     if on_hand is None:
         return current or ""
     if on_hand <= 0:
         return "Ordered" if current == "Ordered" else "Out of stock"
-    if reorder_at is not None and on_hand <= reorder_at:
+    if reorder_at is not None and on_hand <= reorder_at and not (target and on_hand >= target):
         return "Ordered" if current == "Ordered" else "Low"
     return "In stock"
 
@@ -295,7 +300,7 @@ class InventorySheet:
         if record["Status"] and record["Status"] not in STATUS_OPTIONS:
             raise InventoryError(f"Status must be one of: {', '.join(STATUS_OPTIONS)}.")
         record["Status"] = auto_status(to_number(record["On hand"]), to_number(record["Reorder at"]),
-                                       record["Status"])
+                                       record["Status"], to_number(record["Target"]))
         record["Item ID"] = self._next_id()
         record["Last checked"] = now_text()
         record["Checked by"] = user.strip()
@@ -303,7 +308,8 @@ class InventorySheet:
         self._log(user, record["Item ID"], name, "(new item)", "", f"On hand {record['On hand'] or 0}")
         return record["Item ID"]
 
-    def update_item(self, item_id: str, changes: dict, user: str) -> dict:
+    def update_item(self, item_id: str, changes: dict, user: str, reason: str = "") -> dict:
+        """Write changed fields; `reason` (e.g. "received +10") is added to the On hand log entry."""
         if not user.strip():
             raise InventoryError("Enter your initials so the change is logged.")
         row_number, item = self.get(item_id)
@@ -322,7 +328,7 @@ class InventorySheet:
                 changed_fields.append(field)
         if "Status" not in changes or "On hand" in changes:
             status = auto_status(to_number(updated["On hand"]), to_number(updated["Reorder at"]),
-                                 str(updated["Status"]))
+                                 str(updated["Status"]), to_number(updated["Target"]))
             if status != updated["Status"]:
                 updated["Status"] = status
                 changed_fields.append("Status")
@@ -335,13 +341,29 @@ class InventorySheet:
             value_input_option="USER_ENTERED",
         )
         for field in dict.fromkeys(changed_fields):
-            self._log(user, item["Item ID"], updated["Item"], field, item[field], updated[field])
+            label = f"{field} ({reason})" if reason and field == "On hand" else field
+            self._log(user, item["Item ID"], updated["Item"], label, item[field], updated[field])
         if not changed_fields:
             self._log(user, item["Item ID"], updated["Item"], "(checked)", "", "no change")
         return updated
 
+    def adjust_on_hand(self, item_id: str, received: float, used: float, user: str) -> dict:
+        """Add what arrived and subtract what was used, reading the latest count from the sheet first."""
+        received, used = to_number(received) or 0, to_number(used) or 0
+        if received < 0 or used < 0:
+            raise InventoryError("Received and used must be zero or more.")
+        if not received and not used:
+            raise InventoryError("Enter an amount received or used.")
+        _, item = self.get(item_id)
+        current = to_number(item["On hand"]) or 0
+        new_total = current + received - used
+        if new_total < 0:
+            raise InventoryError(f"Only {current:g} {item['Unit'] or 'units'} on hand; cannot use {used:g}.")
+        parts = ([f"received +{received:g}"] if received else []) + ([f"used -{used:g}"] if used else [])
+        return self.update_item(item_id, {"On hand": new_total}, user, reason=", ".join(parts))
+
     def seed_starter_items(self, user: str, goal_samples: int = 4000) -> int:
-        """Add the CECTR starter list (skips names already present)."""
+        """Add the COE lab starter list (skips names already present)."""
         existing = {i["Item"].strip().lower() for i in self.items()}
         added = 0
         for name, category, cat_no, unit, per_sample, per_run, target in STARTER_ITEMS:
@@ -426,7 +448,7 @@ def main(argv: list[str] | None = None) -> None:
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_init = sub.add_parser("init", help="Create the tabs and headers.")
-    p_init.add_argument("--seed", action="store_true", help="Add the CECTR starter item list.")
+    p_init.add_argument("--seed", action="store_true", help="Add the COE lab starter item list.")
     p_init.add_argument("--user", default="setup")
 
     sub.add_parser("list", help="Show all items.")
