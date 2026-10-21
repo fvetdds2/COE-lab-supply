@@ -1,0 +1,20 @@
+# Look and feel for the COE Lab Inventory app. Safe to commit (no secrets here).
+
+[theme]
+base = "light"
+primaryColor = "#b8237a"              # magenta: buttons, selected tab, meter
+backgroundColor = "#f2f4f7"           # cool lab gray page
+secondaryBackgroundColor = "#ffffff"  # input fields
+textColor = "#1f2937"
+borderColor = "#dfe3ea"
+showWidgetBorder = true
+font = "IBM Plex Sans:https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap, sans-serif"
+baseFontSize = 16
+baseRadius = "0.6rem"
+buttonRadius = "full"
+headingFontSizes = ["1.9rem", "1.5rem", "1.25rem", "1.1rem", "1rem", "0.9rem"]
+headingFontWeights = [700, 700, 700, 600, 600, 600]
+dataframeHeaderBackgroundColor = "#f6f7f9"
+
+[client]
+toolbarMode = "minimal"

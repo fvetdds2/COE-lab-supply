@@ -11,25 +11,34 @@ staff member's initials and the date in the sheet's Change log tab.
 from __future__ import annotations
 
 import html
+from datetime import datetime
 
 import pandas as pd
 import streamlit as st
 
 import inventory_core as ic
 
-st.set_page_config(page_title="COE Lab Supply Inventory", page_icon="🧪", layout="wide",
+st.set_page_config(page_title="COE Lab Inventory", page_icon="🧪", layout="wide",
                    initial_sidebar_state="collapsed")
 
-METER = "#d55181"  # magenta meter fill; clears 3:1 contrast on light and dark backgrounds
-# Stock states, most urgent first: (label, icon, chip color, glyph color). Status colors follow
-# the usual inventory convention and always come with an icon and a word, never color alone.
+METER = "#b8237a"  # magenta: meter fill and covered runs (5.9:1 on white)
+# Stock states, most urgent first: (label, icon, text color, tint). Each state always shows an
+# icon and a word, never color alone. Text colors pass 4.5:1 on their tint.
 STATES = {
-    "out": ("Out of stock", "✕", "#d03b3b", "#ffffff"),
-    "low": ("Low stock", "▲", "#fab219", "#1a1a19"),
-    "below": ("Below target", "◔", "#6b6a66", "#ffffff"),
-    "ok": ("Stocked", "✓", "#0ca30c", "#ffffff"),
+    "out": ("Out of stock", "✕", "#b42318", "#fde8e8"),
+    "low": ("Low stock", "▲", "#8a5300", "#fff3d1"),
+    "none": ("Not counted", "ring", "#4b5563", "#eef1f5"),
+    "below": ("Below target", "half", "#33507a", "#e6edf7"),
+    "ok": ("Stocked", "✓", "#17692a", "#e3f4e6"),
 }
 STATE_ORDER = list(STATES)
+FILTERS = {  # status filter above the item list -> states it shows
+    "All": set(STATES),
+    "Needs action": {"out", "low"},
+    "Not counted": {"none"},
+    "Below target": {"below"},
+    "Stocked": {"ok"},
+}
 REFRESH_SECONDS = 30  # how often the meter and inventory re-read the sheet
 
 DEMO_COUNTS = {  # example counts for demo mode only
@@ -150,7 +159,9 @@ def fmt(value: float) -> str:
     return f"{value:,.0f}" if float(value).is_integer() else f"{value:,.2f}".rstrip("0").rstrip(".")
 
 
-def stock_state(row: ic.MeterRow, reorder_at: float | None) -> str:
+def stock_state(row: ic.MeterRow, reorder_at: float | None, counted: bool) -> str:
+    if not counted:
+        return "none"
     if row.on_hand <= 0:
         return "out"
     if row.fraction >= 1:
@@ -160,96 +171,231 @@ def stock_state(row: ic.MeterRow, reorder_at: float | None) -> str:
     return "below"
 
 
-# --------------------------------------------------------------------------- meter drawing
+def short_date(stamp: str) -> str:
+    """'2026-10-21 09:45' -> '21 Oct' this year, '21 Oct 2025' otherwise."""
+    try:
+        when = datetime.strptime(str(stamp)[:10], "%Y-%m-%d")
+    except ValueError:
+        return str(stamp)
+    text = f"{when.day} {when:%b}"
+    return text if when.year == datetime.now().year else f"{text} {when.year}"
+
+
+# --------------------------------------------------------------------------- look and feel
 
 PAGE_CSS = """
 <style>
-.block-container {padding-top: 2.2rem; padding-bottom: 3rem;}
-.meter-list {display:flex; flex-direction:column; gap:16px; margin-top:6px;}
-.meter-row {display:grid; grid-template-columns:minmax(0, 2fr) minmax(0, 3fr) 128px; gap:16px; align-items:center;}
-.meter-name {font-size:14px; line-height:1.3; font-weight:500;}
-.meter-meta {font-size:12px; opacity:0.72; margin-top:2px; line-height:1.35;}
-.meter-track {position:relative; height:12px; border-radius:4px; background:rgba(128,128,128,0.20);}
-.meter-fill {height:100%; border-radius:4px;}
-.meter-tick {position:absolute; top:-4px; width:2px; height:20px; border-radius:1px;
-             background:currentColor; opacity:0.55;}
-.chip {display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:600; white-space:nowrap;}
-.chip span {display:inline-block; width:18px; height:18px; line-height:18px; text-align:center;
-            border-radius:50%; font-size:11px;}
-.legend {display:flex; flex-wrap:wrap; gap:8px 18px; margin:6px 0 4px; font-size:13px;}
-.legend .muted {opacity:0.7; font-weight:400;}
-.hero {font-size:52px; font-weight:700; line-height:1.05; letter-spacing:-0.5px;}
-.hero small {font-size:22px; font-weight:500; opacity:0.75;}
-.hero-sub {font-size:15px; opacity:0.8; margin:6px 0 10px;}
-.hero-track {height:14px; border-radius:4px; background:rgba(128,128,128,0.20); max-width:760px;}
-@media (max-width: 640px) {
-  .block-container {padding-left: 1rem; padding-right: 1rem; padding-top: 1.2rem;}
-  h1 {font-size: 1.7rem !important;}
-  .meter-row {grid-template-columns:minmax(0, 1fr) auto; gap:6px 10px;}
-  .meter-row > div:first-child {grid-column:1 / -1;}
-  .chip {font-size:12px;}
-  .hero {font-size:40px;}
-  .hero small {font-size:18px;}
-  .hero-sub {font-size:14px;}
-  button[kind="primary"], button[kind="secondary"] {min-height: 2.75rem;}
+:root {
+  --ink: #1f2937; --muted: #5b6474; --line: #dfe3ea; --paper: #f2f4f7; --card: #ffffff;
+  --magenta: #b8237a; --track: #e7ebf0;
+}
+.block-container, [data-testid="stMainBlockContainer"] {
+  max-width: 1040px; padding-top: 2rem; padding-bottom: 4rem;
+}
+.num { font-variant-numeric: tabular-nums; }
+
+/* header */
+.app-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;
+            margin-bottom: 4px; }
+.app-title { font-size: 30px; line-height: 1.15; font-weight: 700; color: var(--ink); margin: 0; }
+.app-sub { color: var(--muted); font-size: 15px; margin: 4px 0 0; }
+.conn { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600;
+        color: var(--muted); white-space: nowrap; padding-top: 8px; }
+.conn i { width: 8px; height: 8px; border-radius: 50%; background: #17a34a; display: inline-block; }
+.conn.demo i { background: #e0a100; }
+
+/* hero: one plate per KingFisher run */
+.hero { background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+        padding: 24px 26px 20px; margin: 4px 0 18px; display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); grid-template-areas: "main notes" "plates plates";
+        gap: 20px 40px; }
+.hero-main { grid-area: main; }
+.hero-notes { grid-area: notes; display: flex; flex-direction: column; gap: 8px; justify-content: center;
+              font-size: 15px; line-height: 1.45; color: var(--ink); }
+.hero-plates { grid-area: plates; }
+.hero-big { font-size: 22px; color: var(--muted); line-height: 1.1; }
+.hero-big b { font-size: 60px; font-weight: 700; color: var(--ink); letter-spacing: -1.5px; margin-right: 8px; }
+.hero-sub { font-size: 16px; color: var(--ink); margin-top: 10px; line-height: 1.45; max-width: 42ch; }
+.hero-notes .warn { color: #8a5300; font-weight: 600; }
+.plates { display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); gap: 7px; }
+.plate { aspect-ratio: 3 / 2; border-radius: 4px;
+         background:
+           radial-gradient(circle, rgba(255,255,255,0.45) 0 1.1px, transparent 1.4px) 0 0 / calc(100% / 12) calc(100% / 8),
+           linear-gradient(90deg, var(--magenta) var(--f), var(--track) var(--f)); }
+.plate-key { display: flex; flex-wrap: wrap; gap: 6px 20px; font-size: 13px; color: var(--muted); margin-top: 12px; }
+.plate-key span { display: inline-flex; align-items: center; gap: 6px; }
+.plate-key i { width: 18px; height: 12px; border-radius: 3px; display: inline-block; }
+
+/* status pills */
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 8px;
+        border-radius: 999px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.pill b { font-size: 11px; width: 14px; display: inline-flex; justify-content: center; }
+.ico-ring, .ico-half { width: 10px; height: 10px; border-radius: 50%; border: 1.6px solid currentColor;
+                       box-sizing: border-box; display: inline-block; }
+.ico-half { background: linear-gradient(90deg, currentColor 50%, transparent 50%); }
+
+/* item list, grouped by category */
+.group { margin: 22px 0 0; }
+.group-title { font-size: 15px; font-weight: 700; color: var(--ink); margin: 0 0 8px 2px; }
+.group-title span { color: var(--muted); font-weight: 400; margin-left: 6px; }
+.group-list { background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+              padding: 2px 20px; }
+.item { padding: 14px 0 13px; }
+.item + .item { border-top: 1px solid var(--line); }
+.item-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.item-name { font-size: 16px; font-weight: 600; color: var(--ink); line-height: 1.3; }
+.bar { position: relative; height: 10px; border-radius: 5px; background: var(--track); margin: 10px 0 8px; }
+.bar.unknown { background: repeating-linear-gradient(135deg, #eef1f5 0 6px, #e2e6ec 6px 12px); }
+.bar .fill { height: 100%; border-radius: 5px; background: var(--magenta); }
+.bar .tick { position: absolute; top: -4px; width: 2px; height: 18px; border-radius: 1px;
+             background: var(--ink); opacity: 0.7; }
+.item-meta { display: flex; flex-wrap: wrap; gap: 4px 20px; font-size: 14px; color: var(--muted); }
+.item-meta b { color: var(--ink); font-weight: 700; }
+.item-meta .when { margin-left: auto; }
+.list-foot { font-size: 13px; color: var(--muted); margin: 14px 2px 0; }
+
+/* Streamlit pieces */
+[data-testid="stForm"] { background: var(--card); border-radius: 14px; }
+[data-testid="stExpander"] details { background: var(--card); border-radius: 14px; }
+[data-testid="stMetricValue"] { font-variant-numeric: tabular-nums; }
+
+.st-key-meter_filter [role="radiogroup"] { flex-wrap: wrap; overflow: visible; }
+
+@media (max-width: 760px) {
+  .block-container, [data-testid="stMainBlockContainer"] { padding: 1.2rem 1rem 3rem; }
+  .st-key-topbar [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: 8px; }
+  .st-key-topbar [data-testid="stColumn"] { min-width: 0 !important; width: auto !important; }
+  .st-key-topbar [data-testid="stColumn"]:nth-child(1) { flex: 1 1 0 !important; }
+  .st-key-topbar [data-testid="stColumn"]:nth-child(2) { flex: 1.35 1 0 !important; }
+  .st-key-topbar [data-testid="stColumn"]:nth-child(3) { flex: 0 0 48px !important; }
+  .st-key-refresh button p { display: none; }
+  .st-key-refresh button { padding-left: 0; padding-right: 0; }
+  .st-key-view [role="radiogroup"] { display: grid !important; grid-template-columns: repeat(4, minmax(0, 1fr));
+                                      gap: 6px; }
+  .st-key-view button { border-radius: 999px !important; margin: 0 !important; width: 100%; }
+  .app-head { flex-direction: column; gap: 2px; }
+  .app-title { font-size: 26px; }
+  .conn { padding-top: 2px; }
+  .hero { grid-template-columns: 1fr; grid-template-areas: "main" "plates" "notes";
+          padding: 18px 16px 16px; gap: 16px; }
+  .hero-notes { border-top: 1px solid var(--line); padding-top: 14px; }
+  .hero-big b { font-size: 48px; }
+  .hero-sub { max-width: none; }
+  .plates { grid-template-columns: repeat(var(--cols-sm), minmax(0, 1fr)); gap: 5px; }
+  .group-list { padding: 2px 14px; }
+  .item-name { font-size: 15px; }
+  .item-meta { gap: 2px 14px; font-size: 13px; }
+  .item-meta .when { margin-left: 0; width: 100%; }
+  button[kind="primary"], button[kind="secondary"] { min-height: 2.75rem; }
 }
 </style>
 """
 
 
-def chip(state: str) -> str:
-    label, icon, bg, ink = STATES[state]
-    return f'<span class="chip"><span style="background:{bg};color:{ink};">{icon}</span>{label}</span>'
+def pill(state: str, count: int | None = None) -> str:
+    label, icon, ink, tint = STATES[state]
+    extra = f" {count}" if count is not None else ""
+    mark = f'<i class="ico-{icon}"></i>' if icon in ("ring", "half") else icon
+    return (f'<span class="pill" style="color:{ink};background:{tint};">'
+            f'<b aria-hidden="true">{mark}</b>{label}{extra}</span>')
 
 
-def meter_html(rows: list[ic.MeterRow], info: dict) -> str:
-    parts = ['<div class="meter-list">']
-    for r in rows:
-        reorder, state, when, who = info[r.item_id]
-        unit = plural(r.unit, r.needed)
-        meta = f"{fmt(r.on_hand)} of {fmt(r.needed)} {html.escape(unit)}"
-        if r.shortfall:
-            meta += f" · order {fmt(r.shortfall)}"
-        if reorder is not None:
-            meta += f" · reorder at {fmt(reorder)}"
-        if when:
-            meta += f"<br>checked {html.escape(when[:10])}" + (f" by {html.escape(who)}" if who else "")
-        covers = f"; covers {r.covered:,} samples" if r.covered is not None else ""
-        tip = f"{r.item}: {fmt(r.on_hand)} of {fmt(r.needed)} {unit} ({r.fraction:.0%}){covers}"
+def plates_html(covered: int, goal: int) -> str:
+    """One small 96-well plate per KingFisher run; the magenta share is what stock covers."""
+    runs = ic.runs_needed(goal)
+    if runs > 160:  # too many plates to draw; one long plate strip instead
+        share = min(covered / goal, 1) if goal else 0
+        return (f'<div class="plates" style="--cols:1;--cols-sm:1;"><span class="plate" '
+                f'style="--f:{share * 100:.1f}%;aspect-ratio:12/1;"></span></div>')
+    tiles = []
+    for i in range(runs):
+        size = min(ic.SAMPLES_PER_RUN, goal - i * ic.SAMPLES_PER_RUN)
+        done = max(0, min(covered - i * ic.SAMPLES_PER_RUN, size))
+        tiles.append(f'<span class="plate" style="--f:{done / size * 100:.1f}%;"></span>')
+    full_runs = sum(1 for i in range(runs) if covered >= min((i + 1) * ic.SAMPLES_PER_RUN, goal))
+    return (f'<div class="plates" style="--cols:{min(runs, 14)};--cols-sm:{min(runs, 7)};" role="img" '
+            f'aria-label="{full_runs} of {runs} runs covered">{"".join(tiles)}</div>')
+
+
+def hero_html(summary: dict, rows: list[ic.MeterRow], info: dict) -> str:
+    goal, covered = summary["goal"], summary["covered"]
+    runs = ic.runs_needed(goal)
+    full_runs = min(covered // ic.SAMPLES_PER_RUN, runs) if covered < goal else runs
+    uncounted = [r for r in rows if info[r.item_id][1] == "none"]
+    counted = [r for r in rows if info[r.item_id][1] != "none"]
+
+    if not counted:
+        sub = "Nothing counted yet. Enter shelf counts under Count to see how many runs your stock covers."
+    elif uncounted:
+        sub = (f"{len(uncounted)} items are not counted yet, so they count as zero. Enter their counts "
+               "under Count to see how far your stock goes.")
+    elif covered >= goal:
+        sub = f"Enough on the shelf for the full goal of {goal:,} samples."
+    else:
+        sub = f"Enough on the shelf for {covered:,} of {goal:,} samples."
+
+    notes = []
+    first = min(counted, key=lambda r: (r.covered if r.covered is not None else goal, r.fraction),
+                default=None)
+    if first is not None and first.fraction < 1:
+        notes.append(f"Runs out first: <b>{html.escape(first.item)}</b>, {fmt(first.on_hand)} of "
+                     f"{fmt(first.needed)} {html.escape(plural(first.unit, first.needed))}.")
+    urgent = [r.item for r in rows if info[r.item_id][1] in ("out", "low")]
+    if urgent:
+        names = ", ".join(html.escape(n) for n in urgent[:4])
+        more = f" and {len(urgent) - 4} more" if len(urgent) > 4 else ""
+        notes.append(f'<span class="warn">▲ Reorder now: {names}{more}.</span>')
+    notes_html = f'<div class="hero-notes">{"".join(f"<div>{n}</div>" for n in notes)}</div>' if notes else ""
+
+    return (
+        '<section class="hero">'
+        f'<div class="hero-main"><div class="hero-big num"><b>{full_runs}</b>of {runs} runs</div>'
+        f'<div class="hero-sub">{sub}</div></div>'
+        f"{notes_html}"
+        f'<div class="hero-plates">{plates_html(covered, goal)}'
+        '<div class="plate-key">'
+        f'<span><i style="background:{METER};"></i>Covered by stock</span>'
+        '<span><i style="background:var(--track);"></i>Still to stock</span>'
+        f'<span>Each plate is one KingFisher run of {ic.SAMPLES_PER_RUN} samples</span></div></div>'
+        "</section>"
+    )
+
+
+def item_html(r: ic.MeterRow, reorder: float | None, state: str, when: str, who: str) -> str:
+    unit = html.escape(plural(r.unit, r.needed))
+    if state == "none":
+        bar = '<div class="bar unknown"></div>'
+        meta = [f"<span>Need <b class=\"num\">{fmt(r.needed)}</b> {unit}</span>"]
+    else:
         tick = ""
         if reorder is not None and r.needed:
-            tick = (f'<div class="meter-tick" style="left:calc({min(reorder / r.needed, 1) * 100:.1f}% - 1px);" '
-                    f'title="Reorder level"></div>')
-        parts.append(
-            f'<div class="meter-row" title="{html.escape(tip)}">'
-            f'<div><div class="meter-name">{html.escape(r.item)}</div><div class="meter-meta">{meta}</div></div>'
-            f'<div class="meter-track"><div class="meter-fill" style="width:{r.fraction * 100:.1f}%;'
-            f'background:{METER};"></div>{tick}</div>'
-            f"<div>{chip(state)}</div></div>"
-        )
-    parts.append("</div>")
+            tick = (f'<div class="tick" style="left:calc({min(reorder / r.needed, 1) * 100:.1f}% - 1px);" '
+                    'title="Reorder level"></div>')
+        bar = (f'<div class="bar" title="{r.fraction:.0%} of target"><div class="fill" '
+               f'style="width:{r.fraction * 100:.1f}%;"></div>{tick}</div>')
+        meta = [f'<span><b class="num">{fmt(r.on_hand)}</b> of <span class="num">{fmt(r.needed)}</span> {unit}</span>']
+        if r.shortfall:
+            meta.append(f'<span>Order <span class="num">{fmt(r.shortfall)}</span></span>')
+    if reorder is not None:
+        meta.append(f'<span>Reorder at <span class="num">{fmt(reorder)}</span></span>')
+    if when:
+        by = f" by {html.escape(str(who))}" if who else ""
+        meta.append(f'<span class="when">Checked {html.escape(short_date(when))}{by}</span>')
+    return (f'<div class="item"><div class="item-top"><div class="item-name">{html.escape(r.item)}</div>'
+            f'{pill(state)}</div>{bar}<div class="item-meta">{"".join(meta)}</div></div>')
+
+
+def groups_html(rows: list[ic.MeterRow], info: dict, category_order: list[str]) -> str:
+    groups: dict[str, list[ic.MeterRow]] = {}
+    for r in rows:
+        groups.setdefault(r.category or "Other", []).append(r)
+    order = [c for c in category_order if c in groups] + sorted(c for c in groups if c not in category_order)
+    parts = []
+    for cat in order:
+        body = "".join(item_html(r, *info[r.item_id]) for r in groups[cat])
+        parts.append(f'<section class="group"><div class="group-title">{html.escape(cat)}'
+                     f'<span>{len(groups[cat])}</span></div><div class="group-list">{body}</div></section>')
     return "".join(parts)
-
-
-def hero_html(summary: dict, rows: list[ic.MeterRow]) -> str:
-    goal, covered = summary["goal"], summary["covered"]
-    share = covered / goal if goal else 0
-    limiting = summary["limiting_item"]
-    limit_row = next((r for r in rows if r.item == limiting), None)
-    if share >= 1:
-        sub = f"Stock covers the full goal of {goal:,} samples ({summary['runs']} KingFisher runs)."
-    elif limit_row:
-        sub = (f"Stock covers {share:.0%} of the {goal:,}-sample goal. First to run out: "
-               f"{html.escape(limiting)} ({fmt(limit_row.on_hand)} of {fmt(limit_row.needed)} "
-               f"{html.escape(plural(limit_row.unit, limit_row.needed))}).")
-    else:
-        sub = "Add usage per sample or per run to items to see coverage."
-    return (
-        f'<div class="hero">{covered:,} <small>of {goal:,} samples</small></div>'
-        f'<div class="hero-sub">{sub}</div>'
-        f'<div class="hero-track"><div class="meter-fill" style="width:{min(share, 1) * 100:.1f}%;'
-        f'background:{METER};"></div></div>'
-    )
 
 
 # --------------------------------------------------------------------------- page helpers
@@ -291,21 +437,35 @@ def needs_initials() -> bool:
 sheet, demo_reason = get_sheet()
 demo = bool(demo_reason)
 st.markdown(PAGE_CSS, unsafe_allow_html=True)
-st.title("COE Lab Inventory")
+connection = ('<span class="conn demo"><i></i>Demo data</span>' if demo
+              else '<span class="conn"><i></i>Live from Google Sheets</span>')
+st.markdown(
+    '<header class="app-head"><div>'
+    '<div class="app-title" role="heading" aria-level="1">COE Lab Inventory</div>'
+    '<p class="app-sub">Supplies for whole-blood DNA extraction on the KingFisher Apex</p>'
+    f"</div>{connection}</header>",
+    unsafe_allow_html=True,
+)
 if "flash" in st.session_state:
-    st.success(st.session_state.pop("flash"))
+    st.success(st.session_state.pop("flash"), icon=":material/check_circle:")
 if demo:
     st.info("Demo mode: example counts, not your inventory.\n\n**Why:** " + demo_reason)
 
-top1, top2, top3 = st.columns([2, 2, 1], vertical_alignment="bottom")
-user = top1.text_input("Your initials", key="user", max_chars=8, placeholder="e.g. DS",
-                       help="Required. Saved with the date and time of every receive, use, count and change.")
-user = user.strip().upper()
-goal = int(top2.number_input("Sample goal", min_value=1, value=4000, step=96,
-                             help="Targets for usage-based items scale with this number."))
-if top3.button("Refresh", width="stretch", help="Read the latest numbers from Google Sheets now."):
-    refresh()
-    st.rerun()
+with st.container(key="topbar"):
+    top1, top2, top3 = st.columns([2, 1.4, 0.8], vertical_alignment="bottom", gap="small")
+    user = top1.text_input("Your initials", key="user", max_chars=8, placeholder="e.g. DS",
+                           help="Required. Saved with the date and time of every receive, use, count and change.")
+    user = user.strip().upper()
+    goal_now = int(st.session_state.get("goal", 4000))
+    with top2.popover(f"Goal {goal_now:,}", icon=":material/flag:", width="stretch",
+                      help="How many samples the stock should cover."):
+        goal = int(st.number_input("Sample goal", min_value=1, value=4000, step=96, key="goal",
+                                   help="Targets for usage-based items scale with this number."))
+        st.caption(f"{ic.runs_needed(goal)} KingFisher runs of {ic.SAMPLES_PER_RUN} samples.")
+    if top3.button("Refresh", key="refresh", icon=":material/refresh:", width="stretch",
+                   help="Read the latest numbers from Google Sheets now."):
+        refresh()
+        st.rerun()
 
 items = current_items()
 if not items:
@@ -314,11 +474,9 @@ if not items:
         added = sheet.seed_starter_items(user, goal)
         flash(f"Added {added} starter items.")
 
-VIEWS = ["Meter", "Receive", "Use", "Count", "Inventory", "Edit", "Log"]
+VIEWS = ["Meter", "Receive", "Use", "Count", "Items", "Edit", "Log"]
 view = st.segmented_control("Go to", VIEWS, default="Meter", key="view", label_visibility="collapsed")
 view = view or "Meter"
-st.caption(f"{ic.runs_needed(goal)} KingFisher runs of {ic.SAMPLES_PER_RUN} samples · "
-           f"numbers refresh every {REFRESH_SECONDS} seconds")
 
 
 # ---- Meter (re-reads the sheet on its own)
@@ -331,32 +489,33 @@ def meter_view(goal: int) -> None:
     for r in rows:
         item = by_id.get(r.item_id, {})
         reorder = ic.to_number(item.get("Reorder at"))
-        info[r.item_id] = (reorder, stock_state(r, reorder), item.get("Last checked", ""),
+        counted = ic.to_number(item.get("On hand")) is not None
+        info[r.item_id] = (reorder, stock_state(r, reorder, counted), item.get("Last checked", ""),
                            item.get("Checked by", ""))
     rows.sort(key=lambda r: (STATE_ORDER.index(info[r.item_id][1]), r.fraction, r.item))
 
-    st.markdown(hero_html(summary, rows), unsafe_allow_html=True)
-    counts = {s: sum(1 for v in info.values() if v[1] == s) for s in STATES}
-    legend = " ".join(f'<span>{chip(s)} <span class="muted">{counts[s]}</span></span>' for s in STATES)
-    st.markdown(f'<div class="legend">{legend}</div>', unsafe_allow_html=True)
+    st.markdown(hero_html(summary, rows, info), unsafe_allow_html=True)
 
-    urgent = [r.item for r in rows if info[r.item_id][1] in ("out", "low")]
-    if urgent:
-        names = ", ".join(urgent[:4]) + (f" and {len(urgent) - 4} more" if len(urgent) > 4 else "")
-        st.warning(f"{len(urgent)} items at or below their reorder level: {names}.")
-
-    f1, f2 = st.columns([2, 1], vertical_alignment="bottom")
-    categories = sorted({r.category for r in rows if r.category})
-    chosen = f1.selectbox("Category", ["All categories"] + categories, key="meter_category")
-    only_action = f2.toggle("Needs action only", key="meter_action",
-                            help="Out of stock, low stock and below target.")
-    shown = [r for r in rows if (chosen == "All categories" or r.category == chosen)
-             and (not only_action or info[r.item_id][1] != "ok")]
+    counts = {name: sum(1 for v in info.values() if v[1] in states) for name, states in FILTERS.items()}
+    f1, f2 = st.columns([3, 1], vertical_alignment="bottom")
+    with f1:
+        picked = st.pills("Show", [n for n in FILTERS if n == "All" or counts[n]], default="All",
+                          key="meter_filter", label_visibility="collapsed",
+                          format_func=lambda n: f"{n} {counts[n]}")
+    category_order = list(dict.fromkeys(i["Category"] for i in items if i.get("Category")))
+    chosen = f2.selectbox("Category", ["All categories"] + category_order, key="meter_category",
+                          label_visibility="collapsed")
+    states = FILTERS.get(picked or "All", FILTERS["All"])
+    shown = [r for r in rows if info[r.item_id][1] in states
+             and (chosen == "All categories" or r.category == chosen)]
     if shown:
-        st.markdown(meter_html(shown, info), unsafe_allow_html=True)
-        st.caption("Magenta bar: on hand as a share of the target. Thin mark: reorder level.")
+        st.markdown(groups_html(shown, info, category_order), unsafe_allow_html=True)
+        st.markdown(
+            '<p class="list-foot">The magenta bar is stock on hand as a share of what the goal needs; '
+            f"the dark mark is the reorder level. Numbers update from the sheet every {REFRESH_SECONDS} "
+            "seconds.</p>", unsafe_allow_html=True)
     else:
-        st.caption("Nothing to show for this filter.")
+        st.caption("No items match this filter.")
 
     tracked = {r.item_id for r in rows}
     untargeted = [i for i in items if i["Item ID"] not in tracked]
@@ -500,7 +659,7 @@ elif view == "Count":
                 sheet.update_item(current["Item ID"], {"Status": "Ordered"}, user)
                 flash(f"{current['Item']} marked as Ordered by {user}.")
 
-elif view == "Inventory":
+elif view == "Items":
     inventory_view()
 
 elif view == "Edit":
