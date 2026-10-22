@@ -29,6 +29,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+# Bumped whenever app.py starts relying on something new in this module.
+CORE_VERSION = 3
+
 INVENTORY_TAB = "Inventory"
 LOG_TAB = "Change log"
 LOCATIONS_TAB = "Locations"
