@@ -686,9 +686,9 @@ if not items:
         added = sheet.seed_starter_items(user)
         flash(f"Added {added} starter items.")
 
-VIEWS = ["Meter", "Order", "Map", "Receive", "Use", "Count", "Items", "Edit", "Log"]
-view = st.segmented_control("Go to", VIEWS, default="Meter", key="view", label_visibility="collapsed")
-view = view or "Meter"
+VIEWS = ["Map", "Meter", "Order", "Receive", "Use", "Count", "Items", "Edit", "Log"]
+view = st.segmented_control("Go to", VIEWS, default="Map", key="view", label_visibility="collapsed")
+view = view or "Map"
 
 
 # ---- Meter (the summary and list re-read the sheet on their own)
