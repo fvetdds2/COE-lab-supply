@@ -91,11 +91,36 @@ PRESET_PLACES = [
     ("Chemical hood", 78.0, 93.0),
     ("Flammables cabinet", 74.0, 97.2),
     ("Lab bench #5, QC", 94.8, 94.6),
+    # sub-storage spots, clustered around their parent cabinet/bench pin above
+    ("Freezer box cabinet 1, top", 63.3, 41.0),
+    ("Freezer box cabinet 1, lower", 66.9, 41.0),
+    ("Freezer box cabinet 1, drawer 1", 63.3, 43.4),
+    ("Freezer box cabinet 1, drawer 2", 66.9, 43.4),
+    ("Freezer box cabinet 1, empty space", 65.1, 44.8),
+    ("Freezer box cabinet 2, top", 72.9, 41.0),
+    ("Freezer box cabinet 2, lower", 76.5, 41.0),
+    ("Freezer box cabinet 2, drawer 1", 72.9, 43.4),
+    ("Freezer box cabinet 2, drawer 2", 76.5, 43.4),
+    ("Freezer box cabinet 2, empty space", 74.7, 44.8),
+    ("Delivery desk, top shelf", 19.2, 50.3),
+    ("Delivery desk, drawer 1", 22.8, 50.3),
+    ("Delivery desk, drawer 2", 21.0, 52.9),
+    ("Lab bench #7, specimen prep, top shelf 1", 66.4, 68.7),
+    ("Lab bench #7, specimen prep, top shelf 2", 70.0, 68.7),
+    ("Lab bench #7, specimen prep, lower storage", 68.2, 71.3),
+    ("Lab bench #6, extraction, top shelf 1", 66.4, 76.6),
+    ("Lab bench #6, extraction, top shelf 2", 70.0, 76.6),
+    ("Lab bench #6, extraction, lower storage", 68.2, 79.2),
+    ("Lab bench #2, thermal, drawer 1", 3.9, 69.6),
+    ("Lab bench #2, thermal, drawer 2", 7.5, 69.6),
+    ("Lab bench #2, thermal, lower storage", 5.7, 72.2),
 ]
 # Starting notes for places whose position on the plan is a guess.
 PRESET_NOTES = {
     "Flammables cabinet": "Not drawn on the floor plan; the pin is by the chemical hood. Move it under "
                           "Edit a location if the cabinet is somewhere else.",
+    "Freezer box cabinet 1, empty space": "Open space in the cabinet, not yet assigned to an item.",
+    "Freezer box cabinet 2, empty space": "Open space in the cabinet, not yet assigned to an item.",
 }
 PRESET_LOCATIONS = [name for name, _, _ in PRESET_PLACES]
 NUMERIC_FIELDS = {"Per sample", "Per run", "Target", "On hand", "Reorder at"}
