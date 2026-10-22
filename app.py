@@ -1,13 +1,29 @@
+"""Lab Supply Inventory for the Center of Excellence for Clinical and Translational Research.
+
+Streamlit front end for the "COE lab inventory" Google Sheet.
+
+Run locally:   streamlit run app.py
+Secrets:       .streamlit/secrets.toml  (see secrets.toml.example and README.md)
+No secrets?    The app opens in demo mode with example counts, so you can try it.
+
+Works on phones and computers. Every receive, use, count and edit is saved with the
+staff member's initials and the date in the sheet's Change log tab.
+"""
+
 from __future__ import annotations
+
 import hmac
 import html
 import time
+from dataclasses import dataclass
 from datetime import datetime
+
 import pandas as pd
 import streamlit as st
+
 import inventory_core as ic
 
-CENTER_NAME = "Center of Excellence for Clinical and Translational Research"
+CENTER_NAME = "The Center of Excellence for Clinical and Translational Research"
 APP_TITLE = "Laboratory Supply Inventory"
 APP_NAME = f"{CENTER_NAME} {APP_TITLE}"
 
@@ -23,16 +39,16 @@ STATES = {
     "out": ("Out of stock", "✕", "#b42318", "#fde8e8"),
     "low": ("Low stock", "▲", "#8a5300", "#fff3d1"),
     "none": ("Not counted", "ring", "#4b5563", "#eef1f5"),
-    "below": ("Below target", "half", "#33507a", "#e6edf7"),
-    "ok": ("Stocked", "✓", "#17692a", "#e3f4e6"),
+    "nomin": ("No minimum set", "dash", "#4b5563", "#eef1f5"),
+    "ok": ("In stock", "✓", "#17692a", "#e3f4e6"),
 }
 STATE_ORDER = list(STATES)
 FILTERS = {  # status filter above the item list -> states it shows
     "All": set(STATES),
     "Needs action": {"out", "low"},
     "Not counted": {"none"},
-    "Below target": {"below"},
-    "Stocked": {"ok"},
+    "No minimum": {"nomin"},
+    "In stock": {"ok"},
 }
 REFRESH_SECONDS = 30  # how often the meter and inventory re-read the sheet
 
@@ -154,16 +170,59 @@ def fmt(value: float) -> str:
     return f"{value:,.0f}" if float(value).is_integer() else f"{value:,.2f}".rstrip("0").rstrip(".")
 
 
-def stock_state(row: ic.MeterRow, reorder_at: float | None, counted: bool) -> str:
-    if not counted:
-        return "none"
-    if row.on_hand <= 0:
-        return "out"
-    if row.fraction >= 1:
-        return "ok"
-    if reorder_at is not None and row.on_hand <= reorder_at:
-        return "low"
-    return "below"
+@dataclass
+class Stock:
+    """One item as the meter sees it: count, minimum alert level and optional full-stock level."""
+    item_id: str
+    item: str
+    category: str
+    unit: str
+    on_hand: float | None   # None = not counted yet
+    minimum: float | None   # alert at or below this; None or 0 = no minimum set
+    full: float | None      # optional full-stock level (sheet column Target); sets the bar length
+    when: str
+    who: str
+    cat_no: str
+
+    @property
+    def state(self) -> str:
+        if self.on_hand is None:
+            return "none"
+        if self.on_hand <= 0:
+            return "out"
+        if not self.minimum:
+            return "nomin"
+        return "low" if self.on_hand <= self.minimum else "ok"
+
+    @property
+    def scale(self) -> float | None:
+        """Length of a full bar: the full-stock level, or twice the minimum when none is set."""
+        scale = self.full or (2 * self.minimum if self.minimum else None)
+        if scale and self.minimum and scale < self.minimum:
+            scale = 2 * self.minimum
+        return scale
+
+    @property
+    def order(self) -> float | None:
+        """Suggested order: up to the full-stock level when one is set."""
+        if self.state in ("out", "low") and self.full:
+            return max(self.full - (self.on_hand or 0), 0)
+        return None
+
+
+def stock_rows(items: list[dict]) -> list[Stock]:
+    rows = []
+    for i in items:
+        minimum = ic.to_number(i.get("Reorder at"))
+        rows.append(Stock(
+            item_id=i["Item ID"], item=i["Item"], category=i.get("Category", ""), unit=i.get("Unit", ""),
+            on_hand=ic.to_number(i.get("On hand")), minimum=minimum or None,
+            full=ic.to_number(i.get("Target")) or None, when=i.get("Last checked", ""),
+            who=i.get("Checked by", ""), cat_no=i.get("Cat. No.", ""),
+        ))
+    rows.sort(key=lambda r: (STATE_ORDER.index(r.state),
+                             (r.on_hand or 0) / r.scale if r.scale else 1, r.item.lower()))
+    return rows
 
 
 def short_date(stamp: str) -> str:
@@ -208,27 +267,17 @@ PAGE_CSS = """
 .conn i { width: 8px; height: 8px; border-radius: 50%; background: #17a34a; display: inline-block; }
 .conn.demo i { background: #e0a100; }
 
-/* hero: one plate per KingFisher run */
-.hero { background: var(--card); border: 1px solid var(--line); border-radius: 16px;
-        padding: 24px 26px 20px; margin: 4px 0 18px; display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); grid-template-areas: "main notes" "plates plates";
-        gap: 20px 40px; }
-.hero-main { grid-area: main; }
-.hero-notes { grid-area: notes; display: flex; flex-direction: column; gap: 8px; justify-content: center;
-              font-size: 17px; line-height: 1.45; color: var(--ink); }
-.hero-plates { grid-area: plates; }
-.hero-big { font-size: 26px; color: var(--muted); line-height: 1.1; }
-.hero-big b { font-size: 68px; font-weight: 700; color: var(--ink); letter-spacing: -1.5px; margin-right: 8px; }
-.hero-sub { font-size: 18px; color: var(--ink); margin-top: 10px; line-height: 1.45; max-width: 42ch; }
-.hero-notes .warn { color: #8a5300; font-weight: 600; }
-.plates { display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); gap: 7px; }
-.plate { aspect-ratio: 3 / 2; border-radius: 4px;
-         background:
-           radial-gradient(circle, rgba(255,255,255,0.45) 0 1.1px, transparent 1.4px) 0 0 / calc(100% / 12) calc(100% / 8),
-           linear-gradient(90deg, var(--magenta) var(--f), var(--track) var(--f)); }
-.plate-key { display: flex; flex-wrap: wrap; gap: 6px 20px; font-size: 15px; color: var(--muted); margin-top: 12px; }
-.plate-key span { display: inline-flex; align-items: center; gap: 6px; }
-.plate-key i { width: 18px; height: 12px; border-radius: 3px; display: inline-block; }
+/* alert summary at the top of the meter */
+.summary { border-radius: 16px; padding: 22px 26px; margin: 4px 0 18px; border: 1px solid; }
+.summary.alert { background: #fff8e6; border-color: #f1d79c; }
+.summary.clear { background: #effaf1; border-color: #bfe5c7; }
+.summary.empty { background: var(--card); border-color: var(--line); }
+.sum-big { font-size: 24px; font-weight: 600; color: var(--ink); line-height: 1.25; }
+.sum-big b { font-size: 52px; font-weight: 700; letter-spacing: -1px; margin-right: 10px; vertical-align: -6px; }
+.summary.alert .sum-big b { color: #8a5300; }
+.summary.clear .sum-big b { color: #17692a; }
+.sum-list { font-size: 17px; color: var(--ink); margin-top: 10px; line-height: 1.5; }
+.sum-quiet { font-size: 15px; color: var(--muted); margin-top: 8px; }
 
 /* status pills */
 .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 8px;
@@ -237,6 +286,7 @@ PAGE_CSS = """
 .ico-ring, .ico-half { width: 10px; height: 10px; border-radius: 50%; border: 1.6px solid currentColor;
                        box-sizing: border-box; display: inline-block; }
 .ico-half { background: linear-gradient(90deg, currentColor 50%, transparent 50%); }
+.ico-dash { width: 10px; height: 2px; border-radius: 1px; background: currentColor; display: inline-block; }
 
 /* item list, grouped by category */
 .group { margin: 22px 0 0; }
@@ -276,8 +326,7 @@ input, textarea, [data-baseweb="select"] div { font-size: 16px !important; }
   .st-key-topbar [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: 8px; }
   .st-key-topbar [data-testid="stColumn"] { min-width: 0 !important; width: auto !important; }
   .st-key-topbar [data-testid="stColumn"]:nth-child(1) { flex: 1 1 0 !important; }
-  .st-key-topbar [data-testid="stColumn"]:nth-child(2) { flex: 1.35 1 0 !important; }
-  .st-key-topbar [data-testid="stColumn"]:nth-child(3) { flex: 0 0 48px !important; }
+  .st-key-topbar [data-testid="stColumn"]:nth-child(2) { flex: 0 0 48px !important; }
   .st-key-refresh button p { display: none; }
   .st-key-refresh button { padding-left: 0; padding-right: 0; }
   .st-key-view [role="radiogroup"] { display: grid !important; grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -293,12 +342,10 @@ input, textarea, [data-baseweb="select"] div { font-size: 16px !important; }
   .mast-center { font-size: 15px; }
   .conn { justify-self: end; font-size: 13px; padding: 4px 10px; }
   .mast-title { font-size: 24px; }
-  .hero { grid-template-columns: 1fr; grid-template-areas: "main" "plates" "notes";
-          padding: 18px 16px 16px; gap: 16px; }
-  .hero-notes { border-top: 1px solid var(--line); padding-top: 14px; }
-  .hero-big b { font-size: 54px; }
-  .hero-sub { max-width: none; }
-  .plates { grid-template-columns: repeat(var(--cols-sm), minmax(0, 1fr)); gap: 5px; }
+  .summary { padding: 18px 16px; }
+  .sum-big { font-size: 20px; }
+  .sum-big b { font-size: 44px; }
+  .sum-list { font-size: 16px; }
   .group-list { padding: 2px 14px; }
   .item-name { font-size: 17px; }
   .item-meta { gap: 2px 14px; font-size: 15px; }
@@ -312,104 +359,74 @@ input, textarea, [data-baseweb="select"] div { font-size: 16px !important; }
 def pill(state: str, count: int | None = None) -> str:
     label, icon, ink, tint = STATES[state]
     extra = f" {count}" if count is not None else ""
-    mark = f'<i class="ico-{icon}"></i>' if icon in ("ring", "half") else icon
+    mark = f'<i class="ico-{icon}"></i>' if icon in ("ring", "half", "dash") else icon
     return (f'<span class="pill" style="color:{ink};background:{tint};">'
             f'<b aria-hidden="true">{mark}</b>{label}{extra}</span>')
 
 
-def plates_html(covered: int, goal: int) -> str:
-    """One small 96-well plate per KingFisher run; the magenta share is what stock covers."""
-    runs = ic.runs_needed(goal)
-    if runs > 160:  # too many plates to draw; one long plate strip instead
-        share = min(covered / goal, 1) if goal else 0
-        return (f'<div class="plates" style="--cols:1;--cols-sm:1;"><span class="plate" '
-                f'style="--f:{share * 100:.1f}%;aspect-ratio:12/1;"></span></div>')
-    tiles = []
-    for i in range(runs):
-        size = min(ic.SAMPLES_PER_RUN, goal - i * ic.SAMPLES_PER_RUN)
-        done = max(0, min(covered - i * ic.SAMPLES_PER_RUN, size))
-        tiles.append(f'<span class="plate" style="--f:{done / size * 100:.1f}%;"></span>')
-    full_runs = sum(1 for i in range(runs) if covered >= min((i + 1) * ic.SAMPLES_PER_RUN, goal))
-    return (f'<div class="plates" style="--cols:{min(runs, 14)};--cols-sm:{min(runs, 7)};" role="img" '
-            f'aria-label="{full_runs} of {runs} runs covered">{"".join(tiles)}</div>')
+def summary_html(rows: list[Stock]) -> str:
+    alerts = [r for r in rows if r.state in ("out", "low")]
+    uncounted = sum(1 for r in rows if r.state == "none")
+    no_min = sum(1 for r in rows if r.state == "nomin")
+    quiet = []
+    if uncounted:
+        quiet.append(f"{uncounted} {'item is' if uncounted == 1 else 'items are'} not counted yet.")
+    if no_min:
+        quiet.append(f"{no_min} {'item has' if no_min == 1 else 'items have'} no minimum set. "
+                     "Use Set minimum alerts below to add one.")
+    quiet_html = "".join(f'<div class="sum-quiet">{q}</div>' for q in quiet)
+    if alerts:
+        names = ", ".join(html.escape(r.item) for r in alerts[:6])
+        more = f" and {len(alerts) - 6} more" if len(alerts) > 6 else ""
+        word = "item needs" if len(alerts) == 1 else "items need"
+        return (f'<section class="summary alert"><div class="sum-big"><b class="num">{len(alerts)}</b>{word} '
+                f'reordering</div><div class="sum-list">▲ At or below the minimum: {names}{more}.</div>'
+                f"{quiet_html}</section>")
+    if any(r.state == "ok" for r in rows):
+        return (f'<section class="summary clear"><div class="sum-big"><b>✓</b>Everything is above its '
+                f'minimum</div>{quiet_html}</section>')
+    return (f'<section class="summary empty"><div class="sum-big">Count the shelf and set minimums to get '
+            f'low-stock alerts</div>{quiet_html}</section>')
 
 
-def hero_html(summary: dict, rows: list[ic.MeterRow], info: dict) -> str:
-    goal, covered = summary["goal"], summary["covered"]
-    runs = ic.runs_needed(goal)
-    full_runs = min(covered // ic.SAMPLES_PER_RUN, runs) if covered < goal else runs
-    uncounted = [r for r in rows if info[r.item_id][1] == "none"]
-    counted = [r for r in rows if info[r.item_id][1] != "none"]
-
-    if not counted:
-        sub = "Nothing counted yet. Enter shelf counts under Count to see how many runs your stock covers."
-    elif uncounted:
-        sub = (f"{len(uncounted)} items are not counted yet, so they count as zero. Enter their counts "
-               "under Count to see how far your stock goes.")
-    elif covered >= goal:
-        sub = f"Enough on the shelf for the full goal of {goal:,} samples."
-    else:
-        sub = f"Enough on the shelf for {covered:,} of {goal:,} samples."
-
-    notes = []
-    first = min(counted, key=lambda r: (r.covered if r.covered is not None else goal, r.fraction),
-                default=None)
-    if first is not None and first.fraction < 1:
-        notes.append(f"Runs out first: <b>{html.escape(first.item)}</b>, {fmt(first.on_hand)} of "
-                     f"{fmt(first.needed)} {html.escape(plural(first.unit, first.needed))}.")
-    urgent = [r.item for r in rows if info[r.item_id][1] in ("out", "low")]
-    if urgent:
-        names = ", ".join(html.escape(n) for n in urgent[:4])
-        more = f" and {len(urgent) - 4} more" if len(urgent) > 4 else ""
-        notes.append(f'<span class="warn">▲ Reorder now: {names}{more}.</span>')
-    notes_html = f'<div class="hero-notes">{"".join(f"<div>{n}</div>" for n in notes)}</div>' if notes else ""
-
-    return (
-        '<section class="hero">'
-        f'<div class="hero-main"><div class="hero-big num"><b>{full_runs}</b>of {runs} runs</div>'
-        f'<div class="hero-sub">{sub}</div></div>'
-        f"{notes_html}"
-        f'<div class="hero-plates">{plates_html(covered, goal)}'
-        '<div class="plate-key">'
-        f'<span><i style="background:{METER};"></i>Covered by stock</span>'
-        '<span><i style="background:var(--track);"></i>Still to stock</span>'
-        f'<span>Each plate is one KingFisher run of {ic.SAMPLES_PER_RUN} samples</span></div></div>'
-        "</section>"
-    )
-
-
-def item_html(r: ic.MeterRow, reorder: float | None, state: str, when: str, who: str) -> str:
-    unit = html.escape(plural(r.unit, r.needed))
-    if state == "none":
+def item_html(r: Stock) -> str:
+    unit_word = html.escape(plural(r.unit, r.on_hand if r.on_hand is not None else 2))
+    meta = []
+    if r.on_hand is None:
         bar = '<div class="bar unknown"></div>'
-        meta = [f"<span>Need <b class=\"num\">{fmt(r.needed)}</b> {unit}</span>"]
+        meta.append("<span>Not counted yet</span>")
     else:
-        tick = ""
-        if reorder is not None and r.needed:
-            tick = (f'<div class="tick" style="left:calc({min(reorder / r.needed, 1) * 100:.1f}% - 1px);" '
-                    'title="Reorder level"></div>')
-        bar = (f'<div class="bar" title="{r.fraction:.0%} of target"><div class="fill" '
-               f'style="width:{r.fraction * 100:.1f}%;"></div>{tick}</div>')
-        meta = [f'<span><b class="num">{fmt(r.on_hand)}</b> of <span class="num">{fmt(r.needed)}</span> {unit}</span>']
-        if r.shortfall:
-            meta.append(f'<span>Order <span class="num">{fmt(r.shortfall)}</span></span>')
-    if reorder is not None:
-        meta.append(f'<span>Reorder at <span class="num">{fmt(reorder)}</span></span>')
-    if when:
-        by = f" by {html.escape(str(who))}" if who else ""
-        meta.append(f'<span class="when">Checked {html.escape(short_date(when))}{by}</span>')
+        meta.append(f'<span><b class="num">{fmt(r.on_hand)}</b> {unit_word} on hand</span>')
+        if r.scale:
+            tick = ""
+            if r.minimum:
+                tick = (f'<div class="tick" style="left:calc({min(r.minimum / r.scale, 1) * 100:.1f}% - 1px);" '
+                        'title="Minimum"></div>')
+            share = min(r.on_hand / r.scale, 1)
+            bar = (f'<div class="bar"><div class="fill" style="width:{share * 100:.1f}%;"></div>{tick}</div>')
+        else:
+            bar = '<div class="bar unknown"></div>'
+    if r.minimum:
+        meta.append(f'<span>Minimum <span class="num">{fmt(r.minimum)}</span></span>')
+    if r.full:
+        meta.append(f'<span>Full stock <span class="num">{fmt(r.full)}</span></span>')
+    if r.order:
+        meta.append(f'<span>Order <span class="num">{fmt(r.order)}</span></span>')
+    if r.when:
+        by = f" by {html.escape(str(r.who))}" if r.who else ""
+        meta.append(f'<span class="when">Checked {html.escape(short_date(r.when))}{by}</span>')
     return (f'<div class="item"><div class="item-top"><div class="item-name">{html.escape(r.item)}</div>'
-            f'{pill(state)}</div>{bar}<div class="item-meta">{"".join(meta)}</div></div>')
+            f'{pill(r.state)}</div>{bar}<div class="item-meta">{"".join(meta)}</div></div>')
 
 
-def groups_html(rows: list[ic.MeterRow], info: dict, category_order: list[str]) -> str:
-    groups: dict[str, list[ic.MeterRow]] = {}
+def groups_html(rows: list[Stock], category_order: list[str]) -> str:
+    groups: dict[str, list[Stock]] = {}
     for r in rows:
         groups.setdefault(r.category or "Other", []).append(r)
     order = [c for c in category_order if c in groups] + sorted(c for c in groups if c not in category_order)
     parts = []
     for cat in order:
-        body = "".join(item_html(r, *info[r.item_id]) for r in groups[cat])
+        body = "".join(item_html(r) for r in groups[cat])
         parts.append(f'<section class="group"><div class="group-title">{html.escape(cat)}'
                      f'<span>{len(groups[cat])}</span></div><div class="group-list">{body}</div></section>')
     return "".join(parts)
@@ -524,17 +541,11 @@ if demo:
     st.info("Demo mode: example counts, not your inventory.\n\n**Why:** " + demo_reason)
 
 with st.container(key="topbar"):
-    top1, top2, top3 = st.columns([2, 1.4, 0.8], vertical_alignment="bottom", gap="small")
+    top1, top2 = st.columns([4, 1], vertical_alignment="bottom", gap="small")
     user = top1.text_input("Your initials", key="user", max_chars=8, placeholder="e.g. DS",
                            help="Required. Saved with the date and time of every receive, use, count and change.")
     user = user.strip().upper()
-    goal_now = int(st.session_state.get("goal", 4000))
-    with top2.popover(f"Goal {goal_now:,}", icon=":material/flag:", width="stretch",
-                      help="How many samples the stock should cover."):
-        goal = int(st.number_input("Sample goal", min_value=1, value=4000, step=96, key="goal",
-                                   help="Targets for usage-based items scale with this number."))
-        st.caption(f"{ic.runs_needed(goal)} KingFisher runs of {ic.SAMPLES_PER_RUN} samples.")
-    if top3.button("Refresh", key="refresh", icon=":material/refresh:", width="stretch",
+    if top2.button("Refresh", key="refresh", icon=":material/refresh:", width="stretch",
                    help="Read the latest numbers from Google Sheets now."):
         refresh()
         st.rerun()
@@ -543,7 +554,7 @@ items = current_items()
 if not items:
     st.warning("The inventory sheet is empty.")
     if st.button("Add COE starter item list", disabled=not user):
-        added = sheet.seed_starter_items(user, goal)
+        added = sheet.seed_starter_items(user)
         flash(f"Added {added} starter items.")
 
 VIEWS = ["Meter", "Receive", "Use", "Count", "Items", "Edit", "Log"]
@@ -551,24 +562,57 @@ view = st.segmented_control("Go to", VIEWS, default="Meter", key="view", label_v
 view = view or "Meter"
 
 
-# ---- Meter (re-reads the sheet on its own)
+# ---- Meter (the summary and list re-read the sheet on their own)
 @st.fragment(run_every=REFRESH_SECONDS)
-def meter_view(goal: int) -> None:
+def meter_summary() -> None:
+    st.markdown(summary_html(stock_rows(current_items())), unsafe_allow_html=True)
+
+
+def clean_min(value) -> float | None:
+    if value is None or pd.isna(value):
+        return None
+    return float(value) or None
+
+
+def minimum_editor(items: list[dict]) -> None:
+    with st.expander("Set minimum alerts", icon=":material/notifications:"):
+        st.caption("Each item turns Low stock, and shows in the alert above, when its count is at or below "
+                   "its minimum. Leave a minimum blank or 0 for no alert.")
+        order = list(dict.fromkeys(i["Category"] for i in items))
+        ordered = sorted(items, key=lambda i: (order.index(i["Category"]), i["Item"].lower()))
+        table = pd.DataFrame([{
+            "Item ID": i["Item ID"], "Item": i["Item"], "On hand": ic.to_number(i["On hand"]),
+            "Unit": i["Unit"], "Minimum": clean_min(ic.to_number(i["Reorder at"])),
+        } for i in ordered])
+        edited = st.data_editor(
+            table, key="minimum_table", hide_index=True, width="stretch", num_rows="fixed",
+            disabled=["Item", "On hand", "Unit"],
+            column_config={
+                "Item ID": None,
+                "Item": st.column_config.TextColumn("Item", width="large"),
+                "On hand": st.column_config.NumberColumn("On hand", format="%g"),
+                "Minimum": st.column_config.NumberColumn("Minimum", min_value=0, step=1, format="%g",
+                                                         help="Alert when the count is at or below this."),
+            },
+        )
+        if st.button("Save minimums", type="primary", key="save_minimums") and not needs_initials():
+            changed = [(row["Item ID"], clean_min(row["Minimum"]))
+                       for (_, row), (_, before) in zip(edited.iterrows(), table.iterrows())
+                       if clean_min(row["Minimum"]) != clean_min(before["Minimum"])]
+            if not changed:
+                st.info("No minimums changed.")
+            else:
+                for item_id, minimum in changed:
+                    sheet.update_item(item_id, {"Reorder at": minimum if minimum else ""}, user)
+                st.session_state.pop("minimum_table", None)
+                flash(f"Saved {len(changed)} minimum{'s' if len(changed) != 1 else ''} ({user}).")
+
+
+@st.fragment(run_every=REFRESH_SECONDS)
+def meter_list() -> None:
     items = current_items()
-    rows, summary = ic.restock_report(items, goal)
-    by_id = {i["Item ID"]: i for i in items}
-    info = {}
-    for r in rows:
-        item = by_id.get(r.item_id, {})
-        reorder = ic.to_number(item.get("Reorder at"))
-        counted = ic.to_number(item.get("On hand")) is not None
-        info[r.item_id] = (reorder, stock_state(r, reorder, counted), item.get("Last checked", ""),
-                           item.get("Checked by", ""))
-    rows.sort(key=lambda r: (STATE_ORDER.index(info[r.item_id][1]), r.fraction, r.item))
-
-    st.markdown(hero_html(summary, rows, info), unsafe_allow_html=True)
-
-    counts = {name: sum(1 for v in info.values() if v[1] in states) for name, states in FILTERS.items()}
+    rows = stock_rows(items)
+    counts = {name: sum(1 for r in rows if r.state in states) for name, states in FILTERS.items()}
     f1, f2 = st.columns([3, 1], vertical_alignment="bottom")
     with f1:
         picked = st.pills("Show", [n for n in FILTERS if n == "All" or counts[n]], default="All",
@@ -578,39 +622,29 @@ def meter_view(goal: int) -> None:
     chosen = f2.selectbox("Category", ["All categories"] + category_order, key="meter_category",
                           label_visibility="collapsed")
     states = FILTERS.get(picked or "All", FILTERS["All"])
-    shown = [r for r in rows if info[r.item_id][1] in states
-             and (chosen == "All categories" or r.category == chosen)]
+    shown = [r for r in rows if r.state in states and (chosen == "All categories" or r.category == chosen)]
     if shown:
-        st.markdown(groups_html(shown, info, category_order), unsafe_allow_html=True)
+        st.markdown(groups_html(shown, category_order), unsafe_allow_html=True)
         st.markdown(
-            '<p class="list-foot">The magenta bar is stock on hand as a share of what the goal needs; '
-            f"the dark mark is the reorder level. Numbers update from the sheet every {REFRESH_SECONDS} "
-            "seconds.</p>", unsafe_allow_html=True)
+            '<p class="list-foot">The magenta bar shows stock on hand against the full-stock level, or '
+            "against twice the minimum when no full-stock level is set. The dark mark is the minimum. "
+            f"Numbers update from the sheet every {REFRESH_SECONDS} seconds.</p>", unsafe_allow_html=True)
     else:
         st.caption("No items match this filter.")
 
-    tracked = {r.item_id for r in rows}
-    untargeted = [i for i in items if i["Item ID"] not in tracked]
-    if untargeted:
-        with st.expander(f"Items without a target ({len(untargeted)})"):
-            st.caption("Counted, but not on the meter until a target or usage is set under Edit.")
-            st.dataframe(pd.DataFrame(untargeted)[["Item", "On hand", "Unit", "Checked by", "Last checked"]],
-                         hide_index=True, width="stretch")
-
-    short = [r for r in rows if r.shortfall > 0]
+    short = [r for r in rows if r.state in ("out", "low")]
     with st.expander(f"Shopping list ({len(short)} items)"):
         if short:
-            cat_no = {i["Item ID"]: i["Cat. No."] for i in items}
             shop = pd.DataFrame([{
-                "Item": r.item, "Cat. No.": cat_no.get(r.item_id, ""), "Unit": r.unit,
-                "On hand": r.on_hand, f"Target for {goal:,}": r.needed, "Order": r.shortfall,
-                "Status": STATES[info[r.item_id][1]][0],
+                "Item": r.item, "Cat. No.": r.cat_no, "Unit": r.unit, "On hand": r.on_hand,
+                "Minimum": r.minimum, "Full stock": r.full, "Suggested order": r.order,
+                "Status": STATES[r.state][0],
             } for r in short])
             st.dataframe(shop, hide_index=True, width="stretch")
             st.download_button("Download shopping list (CSV)", shop.to_csv(index=False),
-                               file_name=f"shopping_list_{goal}_samples.csv", mime="text/csv")
+                               file_name="shopping_list.csv", mime="text/csv")
         else:
-            st.success("Nothing to order for this goal.")
+            st.success("Nothing is at or below its minimum.")
 
 
 # ---- Inventory table (re-reads the sheet on its own)
@@ -633,15 +667,20 @@ def inventory_view() -> None:
         df = df[df["Category"] == cat_filter]
     if status_filter != "All":
         df = df[df["Status"] == status_filter]
+    df = df.drop(columns=["Per sample", "Per run"], errors="ignore").rename(
+        columns={"Reorder at": "Minimum", "Target": "Full stock"})
     if not st.toggle("Show all columns", key="inv_all"):
-        df = df[["Item", "On hand", "Unit", "Status", "Checked by", "Last checked"]]
+        df = df[["Item", "On hand", "Unit", "Minimum", "Status", "Checked by", "Last checked"]]
     st.dataframe(df, hide_index=True, width="stretch")
     st.download_button("Download inventory (CSV)", pd.DataFrame(items).to_csv(index=False),
                        file_name="coe_lab_inventory.csv", mime="text/csv")
 
 
 if view == "Meter":
-    meter_view(goal)
+    meter_summary()
+    if items:
+        minimum_editor(items)
+    meter_list()
 
 elif view == "Receive":
     st.subheader("Receive supplies")
@@ -671,7 +710,7 @@ elif view == "Receive":
                                              "Category": "" if category == "Other" else category,
                                              "Cat. No.": cat_no, "Location": location}, user)
                     flash(f"Added {name.strip()} ({new_id}) with {fmt(qty)} {plural(unit.strip(), qty)} "
-                          f"received by {user}. Set its target and reorder level under Edit.")
+                          f"received by {user}. Set its minimum under Meter, Set minimum alerts.")
                 except ic.InventoryError as exc:
                     st.error(str(exc))
     elif items:
@@ -746,29 +785,25 @@ elif view == "Edit":
             unit = c1.text_input("Unit", value=current["Unit"])
             category = c2.text_input("Category", value=current["Category"])
             c3, c4 = st.columns(2)
-            new_reorder = c3.number_input("Reorder at (low-stock level)", min_value=0.0, step=1.0,
-                                          value=float(ic.to_number(current["Reorder at"]) or 0))
-            status_choice = c4.selectbox("Status", ["Automatic"] + ic.STATUS_OPTIONS,
-                                         help="Automatic sets In stock, Low or Out of stock from the count.")
+            new_reorder = c3.number_input("Minimum (alert at or below)", min_value=0.0, step=1.0,
+                                          value=float(ic.to_number(current["Reorder at"]) or 0),
+                                          help="0 means no low-stock alert for this item.")
+            new_target = c4.number_input("Full stock level (optional)", min_value=0.0, step=1.0,
+                                         value=float(ic.to_number(current["Target"]) or 0),
+                                         help="How much you keep when fully stocked. Sets the bar length "
+                                              "and the suggested order.")
             d1, d2 = st.columns(2)
             new_location = d1.text_input("Location", value=current["Location"])
             new_cat = d2.text_input("Cat. No.", value=current["Cat. No."])
+            status_choice = st.selectbox("Status", ["Automatic"] + ic.STATUS_OPTIONS,
+                                         help="Automatic sets In stock, Low or Out of stock from the count.")
             new_notes = st.text_area("Notes", value=current["Notes"])
-            with st.expander("Target and usage"):
-                new_target = st.number_input("Target (fixed amount to keep)", min_value=0.0, step=1.0,
-                                             value=float(ic.to_number(current["Target"]) or 0))
-                e1, e2 = st.columns(2)
-                new_ps = e1.number_input("Used per sample", min_value=0.0, step=0.01, format="%.5f",
-                                         value=float(ic.to_number(current["Per sample"]) or 0))
-                new_pr = e2.number_input("Used per 96-sample run", min_value=0.0, step=1.0,
-                                         value=float(ic.to_number(current["Per run"]) or 0))
-                st.caption("With usage per sample or per run, the target follows the sample goal.")
             submitted = st.form_submit_button("Save details", type="primary", width="stretch")
         if submitted and not needs_initials():
             proposed = {
                 "Item": name, "Unit": unit, "Category": category, "Reorder at": new_reorder or "",
                 "Location": new_location, "Cat. No.": new_cat, "Notes": new_notes,
-                "Target": new_target or "", "Per sample": new_ps or "", "Per run": new_pr or "",
+                "Target": new_target or "",
             }
             changes = {}
             for field, value in proposed.items():
