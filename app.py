@@ -98,7 +98,7 @@ DEMO_COUNTS = {  # example counts for demo mode only
 
 # --------------------------------------------------------------------------- connection
 
-REQUIRED_CORE = 4  # the inventory_core.py version this app.py needs
+REQUIRED_CORE = 5  # the inventory_core.py version this app.py needs
 
 
 def check_core_version() -> None:
@@ -1014,8 +1014,8 @@ def map_view(items: list[dict]) -> None:
         st.info("The map picture is missing. Put lab_map.jpg in the same folder as app.py.")
 
     unplaced = [r for r in rows if not r.location]
-    shown = st.segmented_control("Show", ["All places", "Places with supplies"], default="All places",
-                                 key="map_show", label_visibility="collapsed") or "All places"
+    shown = st.segmented_control("Show", ["Places with supplies", "All places"], default="Places with supplies",
+                                 key="map_show", label_visibility="collapsed") or "Places with supplies"
     cards = [d for d in details if shown == "All places" or stored.get(d["name"].lower())]
     st.markdown(location_cards(cards, numbers, stored), unsafe_allow_html=True)
     if unplaced:

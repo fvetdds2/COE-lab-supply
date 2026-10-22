@@ -30,7 +30,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 # Bumped whenever app.py starts relying on something new in this module.
-CORE_VERSION = 4
+CORE_VERSION = 5
 
 INVENTORY_TAB = "Inventory"
 LOG_TAB = "Change log"
@@ -49,25 +49,54 @@ LOCATION_HEADERS = ["Location", "Added by", "Added on", "Map X", "Map Y", "Note"
 # None means the place is not drawn on the map yet. Staff can move pins, add notes and add
 # places in the app; those changes are saved in the Locations tab and override these defaults.
 PRESET_PLACES = [
+    # cold storage room
+    ("Liquid nitrogen tank", 14.8, 5.5),
+    ("-80 °C freezer #3", 24.0, 5.5),
     ("4 °C fridge", 33.6, 5.5),
+    ("-80 °C freezer #4 (DNA)", 43.1, 5.5),
+    ("-80 °C freezer #5", 52.5, 5.5),
     ("-20 °C freezer #1", 64.6, 5.5),
     ("Cold storage supply cabinet", 75.0, 5.5),
     ("Cold storage supply shelf", 92.5, 5.5),
+    ("Cart #1", 74.2, 16.1),
+    ("Cart #2", 83.1, 16.1),
+    ("-80 °C freezer #1", 19.6, 42.0),
+    ("-80 °C freezer #2", 29.0, 42.0),
     ("Freezer supplies table", 48.9, 41.8),
+    ("Ice machine", 55.7, 42.0),
     ("Freezer box cabinet 1", 65.1, 42.2),
     ("Freezer box cabinet 2", 74.7, 42.2),
+    # main lab
     ("Delivery desk", 21.0, 51.3),
     ("PPE station", 49.0, 51.3),
+    ("Lab bench #1", 75.8, 51.4),
     ("Supply cabinet 1, upper", 57.9, 53.6),
     ("Supply cabinet 1, lower", 57.9, 57.7),
     ("Supply cabinet 2, upper", 70.8, 53.6),
     ("Supply cabinet 2, lower", 70.8, 57.7),
+    ("Lab bench #7, specimen prep", 68.2, 69.7),
+    ("Lab bench #6, extraction", 68.2, 77.6),
+    ("Sink #2", 19.5, 69.9),
+    ("Sink #3", 72.9, 69.9),
+    ("Lab desk #1", 94.3, 69.5),
+    ("Lab desk #2", 94.3, 74.7),
+    ("Lab bench #2, thermal", 5.7, 70.6),
+    ("Lab bench #3", 28.6, 93.5),
     ("Supply cabinet 3, upper", 38.0, 89.4),
-    ("Supply cabinet 3, lower", 38.0, 93.0),
+    ("Supply cabinet 3, lower", 38.0, 93.7),
+    ("Lab bench #4, clean reagents", 53.1, 97.6),
     ("Supply cabinet 4, upper", 50.3, 89.4),
-    ("Supply cabinet 4, lower", 50.3, 93.0),
-    ("Flammables cabinet", None, None),
+    ("Supply cabinet 4, lower", 50.3, 93.7),
+    ("BSC #1", 65.4, 93.8),
+    ("Chemical hood", 78.0, 93.0),
+    ("Flammables cabinet", 74.0, 97.2),
+    ("Lab bench #5, QC", 94.8, 94.6),
 ]
+# Starting notes for places whose position on the plan is a guess.
+PRESET_NOTES = {
+    "Flammables cabinet": "Not drawn on the floor plan; the pin is by the chemical hood. Move it under "
+                          "Edit a location if the cabinet is somewhere else.",
+}
 PRESET_LOCATIONS = [name for name, _, _ in PRESET_PLACES]
 NUMERIC_FIELDS = {"Per sample", "Per run", "Target", "On hand", "Reorder at"}
 EDITABLE_FIELDS = [h for h in HEADERS if h not in ("Item ID", "Last checked", "Checked by")]
@@ -322,8 +351,8 @@ class InventorySheet:
             if row:
                 result.append({**row, "name": name, "preset": True})
             else:
-                result.append({"name": name, "added_by": "", "x": x, "y": y, "note": "", "saved": False,
-                               "preset": True})
+                result.append({"name": name, "added_by": "", "x": x, "y": y, "note": PRESET_NOTES.get(name, ""),
+                               "saved": False, "preset": True})
             seen.add(name.lower())
         for key, row in saved.items():
             if key not in seen:
