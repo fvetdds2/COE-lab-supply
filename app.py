@@ -12,7 +12,9 @@ staff member's initials and the date in the sheet's Change log tab.
 
 from __future__ import annotations
 
+import hmac
 import html
+import time
 from datetime import datetime
 
 import pandas as pd
@@ -456,18 +458,72 @@ def needs_initials() -> bool:
 
 # --------------------------------------------------------------------------- page
 
+def masthead(connection: str = "") -> None:
+    st.markdown(
+        '<header class="masthead"><div class="mast-text">'
+        f'<div class="mast-name" role="heading" aria-level="1"><span class="mast-center">{CENTER_NAME}</span>'
+        f'<span class="mast-title">{APP_TITLE}</span></div></div>'
+        f"{connection}</header>",
+        unsafe_allow_html=True,
+    )
+
+
+def login_settings() -> dict | None:
+    """User name and password from the [login] section of the secrets, or None when not set."""
+    try:
+        if "login" not in st.secrets:
+            return None
+        cfg = st.secrets["login"]
+        return {"username": str(cfg.get("username", "")), "password": str(cfg.get("password", ""))}
+    except Exception:  # no secrets file at all
+        return None
+
+
+def same(a: str, b: str) -> bool:
+    return hmac.compare_digest(a.encode("utf-8"), b.encode("utf-8"))
+
+
+MAX_TRIES, LOCK_SECONDS = 5, 60
+
+
+def require_login() -> None:
+    """Show the sign-in screen and stop until the right user name and password are entered."""
+    cfg = login_settings()
+    if cfg is None or st.session_state.get("signed_in"):
+        return
+    masthead()
+    _, middle, _ = st.columns([1, 1.4, 1])
+    with middle:
+        locked_for = int(st.session_state.get("locked_until", 0) - time.time())
+        with st.form("sign_in"):
+            st.subheader("Sign in")
+            name = st.text_input("User name", autocomplete="username")
+            password = st.text_input("Password", type="password", autocomplete="current-password")
+            submitted = st.form_submit_button("Sign in", type="primary", width="stretch",
+                                              disabled=locked_for > 0)
+        if locked_for > 0:
+            st.warning(f"Too many tries. Wait {locked_for} seconds, then reload the page.")
+        elif submitted:
+            if same(name.strip(), cfg["username"]) and same(password, cfg["password"]):
+                st.session_state.signed_in = True
+                st.session_state.pop("failed_tries", None)
+                st.rerun()
+            tries = st.session_state.get("failed_tries", 0) + 1
+            st.session_state.failed_tries = tries
+            if tries >= MAX_TRIES:
+                st.session_state.locked_until = time.time() + LOCK_SECONDS
+                st.session_state.failed_tries = 0
+                st.rerun()  # show the wait message and disable the button right away
+            st.error("User name or password is incorrect.")
+    st.stop()
+
+
+st.markdown(PAGE_CSS, unsafe_allow_html=True)
+require_login()
 sheet, demo_reason = get_sheet()
 demo = bool(demo_reason)
-st.markdown(PAGE_CSS, unsafe_allow_html=True)
-connection = ('<span class="conn demo"><i></i>Demo data</span>' if demo
-              else '<span class="conn"><i></i>Live from Google Sheets</span>')
-st.markdown(
-    '<header class="masthead"><div class="mast-text">'
-    f'<div class="mast-name" role="heading" aria-level="1"><span class="mast-center">{CENTER_NAME}</span>'
-    f'<span class="mast-title">{APP_TITLE}</span></div></div>'
-    f"{connection}</header>",
-    unsafe_allow_html=True,
-)
+masthead('<span class="conn demo"><i></i>Demo data</span>' if demo
+         else '<span class="conn"><i></i>Live from Google Sheets</span>')
 if "flash" in st.session_state:
     st.success(st.session_state.pop("flash"), icon=":material/check_circle:")
 if demo:
@@ -608,7 +664,7 @@ elif view == "Receive":
             n3, n4 = st.columns(2)
             category = n3.selectbox("Category", categories + ["Other"])
             cat_no = n4.text_input("Cat. No.")
-            location = st.text_input("Location", placeholder="e.g. Room 5149, shelf B")
+            location = st.text_input("Location", placeholder="e.g. Cold room, shelf B")
             submitted = st.form_submit_button("Add item and quantity", type="primary", width="stretch")
         if submitted and not needs_initials():
             if not unit.strip():
@@ -764,3 +820,14 @@ elif view == "Log":
         st.dataframe(shown.drop(columns=["Date"]), hide_index=True, width="stretch")
         st.download_button("Download log (CSV)", shown.drop(columns=["Date"]).to_csv(index=False),
                            file_name="coe_inventory_change_log.csv", mime="text/csv")
+
+
+# ---- footer
+st.divider()
+if login_settings() is not None:
+    if st.button("Sign out", icon=":material/logout:", key="sign_out"):
+        st.session_state.clear()
+        st.rerun()
+elif not demo:
+    st.caption("Sign-in is off. Add a [login] section with username and password to the app's secrets "
+               "to require it (see README).")
