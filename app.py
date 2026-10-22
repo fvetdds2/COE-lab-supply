@@ -54,15 +54,17 @@ FILTERS = {  # status filter above the item list -> states it shows
 REFRESH_SECONDS = 30  # how often the meter and inventory re-read the sheet
 
 DEMO_LOCATIONS = {  # example locations for demo mode only
-    "MagMAX DNA Multi-Sample Ultra 2.0 Kit": "Supply cabinet A, shelf 1",
-    "KingFisher Apex 96 deep-well plates, barcoded": "Supply cabinet B",
-    "KingFisher Apex 96 KF microplates, barcoded": "Supply cabinet B",
-    "KingFisher 96 deep-well tip combs, barcoded": "Supply cabinet B",
+    "MagMAX DNA Multi-Sample Ultra 2.0 Kit": "Kit storage",
+    "KingFisher Apex 96 deep-well plates, barcoded": "Supply cabinet A",
+    "KingFisher Apex 96 KF microplates, barcoded": "Supply cabinet A",
+    "KingFisher 96 deep-well tip combs, barcoded": "Supply cabinet A",
     "Ethanol, 96-100%, molecular biology grade": "Flammables cabinet",
-    "Filter tips, 20 uL": "Bench 2 drawers",
-    "Filter tips, 200 uL": "Bench 2 drawers",
-    "Filter tips, 300 uL": "Bench 2 drawers",
-    "2D-barcoded tubes": "Supply cabinet A, shelf 2",
+    "Filter tips, 20 uL": "KingFisher bench, drawers",
+    "Filter tips, 200 uL": "KingFisher bench, drawers",
+    "Filter tips, 300 uL": "KingFisher bench, drawers",
+    "2D-barcoded tubes": "Supply cabinet B",
+    "2D tube racks, 96-position": "Supply cabinet B",
+    "Nitrile gloves": "PPE and waste station",
 }
 DEMO_COUNTS = {  # example counts for demo mode only
     "MagMAX DNA Multi-Sample Ultra 2.0 Kit": 8,
@@ -171,8 +173,14 @@ def load_items(_sheet: ic.InventorySheet) -> list[dict]:
     return _sheet.items()
 
 
+@st.cache_data(ttl=REFRESH_SECONDS, show_spinner=False)
+def load_locations(_sheet: ic.InventorySheet) -> list[str]:
+    return _sheet.locations()
+
+
 def refresh() -> None:
     load_items.clear()  # every session re-reads the sheet after a write
+    load_locations.clear()
 
 
 # --------------------------------------------------------------------------- helpers
@@ -482,6 +490,22 @@ def flash(message: str) -> None:
     st.rerun()
 
 
+def location_options(items: list[dict]) -> list[str]:
+    """Preset and added locations, plus any location already typed on an item."""
+    known = sheet.locations() if demo else load_locations(sheet)
+    lower = {k.lower() for k in known}
+    extra = sorted({str(i.get("Location", "")).strip() for i in items} - {""}, key=str.lower)
+    return known + [e for e in extra if e.lower() not in lower]
+
+
+def remember_location(name: str) -> str:
+    """Save a location typed in a form to the shared list (if it is new) and return its clean name."""
+    name = " ".join(str(name or "").split())
+    if name and name.lower() not in {k.lower() for k in location_options([])}:
+        name = sheet.add_location(name, user)
+    return name
+
+
 def current_items() -> list[dict]:
     return sheet.items() if demo else load_items(sheet)  # demo data lives in this session only
 
@@ -621,17 +645,42 @@ def clean_min(value) -> float | None:
     return float(value) or None
 
 
+def add_location_clicked() -> None:
+    """Runs before the page redraws, so the text box can be cleared after saving."""
+    who = st.session_state.get("user", "").strip().upper()
+    if not who:
+        st.session_state.location_error = "Enter your initials at the top before saving."
+        return
+    try:
+        added = sheet.add_location(st.session_state.get("new_location", ""), who)
+    except ic.InventoryError as exc:
+        st.session_state.location_error = str(exc)
+        return
+    st.session_state.new_location = ""
+    refresh()
+    st.session_state.flash = f"Added location: {added}."
+
+
 def minimum_editor(items: list[dict]) -> None:
     with st.expander("Set minimums and locations", icon=":material/edit_note:"):
         st.caption("Each item turns Low stock, and shows in the alert above, when its count is at or below "
-                   "its minimum. Leave a minimum blank or 0 for no alert. Location is where staff find "
-                   "the item, for example Supply cabinet A, shelf 2.")
+                   "its minimum. Leave a minimum blank or 0 for no alert. Pick each item's location from "
+                   "the list; add a place that is missing with Add location.")
+        places = location_options(items)
+        n1, n2 = st.columns([3, 1], vertical_alignment="bottom")
+        new_place = n1.text_input("Add a new location", key="new_location",
+                                  placeholder="e.g. Cold room, shelf 2",
+                                  help="Adds it to the Location list for everyone.")
+        n2.button("Add location", icon=":material/add_location_alt:", width="stretch", key="add_location",
+                  on_click=add_location_clicked)
+        if "location_error" in st.session_state:
+            st.error(st.session_state.pop("location_error"))
         order = list(dict.fromkeys(i["Category"] for i in items))
         ordered = sorted(items, key=lambda i: (order.index(i["Category"]), i["Item"].lower()))
         table = pd.DataFrame([{
             "Item ID": i["Item ID"], "Item": i["Item"], "On hand": ic.to_number(i["On hand"]),
             "Unit": i["Unit"], "Minimum": clean_min(ic.to_number(i["Reorder at"])),
-            "Location": str(i.get("Location", "")),
+            "Location": str(i.get("Location", "")).strip() or None,
         } for i in ordered])
         edited = st.data_editor(
             table, key="minimum_table", hide_index=True, width="stretch", num_rows="fixed",
@@ -642,8 +691,9 @@ def minimum_editor(items: list[dict]) -> None:
                 "On hand": st.column_config.NumberColumn("On hand", format="%g"),
                 "Minimum": st.column_config.NumberColumn("Minimum", min_value=0, step=1, format="%g",
                                                          help="Alert when the count is at or below this."),
-                "Location": st.column_config.TextColumn("Location", width="medium",
-                                                        help="Where staff find the item."),
+                "Location": st.column_config.SelectboxColumn("Location", width="medium", options=places,
+                                                             help="Where staff find the item. Add new "
+                                                                  "places with Add location above."),
             },
         )
         if st.button("Save changes", type="primary", key="save_minimums") and not needs_initials():
@@ -653,9 +703,10 @@ def minimum_editor(items: list[dict]) -> None:
                 if clean_min(row["Minimum"]) != clean_min(before["Minimum"]):
                     minimum = clean_min(row["Minimum"])
                     update["Reorder at"] = minimum if minimum else ""
-                new_place = "" if pd.isna(row["Location"]) else str(row["Location"]).strip()
-                if new_place != str(before["Location"]).strip():
-                    update["Location"] = new_place
+                after_place = "" if pd.isna(row["Location"]) else str(row["Location"]).strip()
+                before_place = "" if pd.isna(before["Location"]) else str(before["Location"]).strip()
+                if after_place != before_place:
+                    update["Location"] = after_place
                 if update:
                     changed.append((row["Item ID"], update))
             if not changed:
@@ -863,7 +914,8 @@ elif view == "Receive":
             n3, n4 = st.columns(2)
             category = n3.selectbox("Category", categories + ["Other"])
             cat_no = n4.text_input("Cat. No.")
-            location = st.text_input("Location", placeholder="e.g. Cold room, shelf B")
+            location = st.selectbox("Location", location_options(items), index=None, accept_new_options=True,
+                                    placeholder="Choose, or type a new location")
             submitted = st.form_submit_button("Add item and quantity", type="primary", width="stretch")
         if submitted and not needs_initials():
             if not unit.strip():
@@ -872,6 +924,7 @@ elif view == "Receive":
                 st.error("Enter the quantity received.")
             else:
                 try:
+                    location = remember_location(location)
                     new_id = sheet.add_item({"Item": name, "Unit": unit, "On hand": qty,
                                              "Category": "" if category == "Other" else category,
                                              "Cat. No.": cat_no, "Location": location}, user)
@@ -962,13 +1015,17 @@ elif view == "Edit":
                                          help="How much you keep when fully stocked. Sets the bar length "
                                               "and the suggested order.")
             d1, d2 = st.columns(2)
-            new_location = d1.text_input("Location", value=current["Location"])
+            places = location_options(items)
+            here = str(current["Location"]).strip()
+            new_location = d1.selectbox("Location", places, index=places.index(here) if here in places else None,
+                                        accept_new_options=True, placeholder="Choose, or type a new location")
             new_cat = d2.text_input("Cat. No.", value=current["Cat. No."])
             status_choice = st.selectbox("Status", ["Automatic"] + ic.STATUS_OPTIONS,
                                          help="Automatic sets In stock, Low or Out of stock from the count.")
             new_notes = st.text_area("Notes", value=current["Notes"])
             submitted = st.form_submit_button("Save details", type="primary", width="stretch")
         if submitted and not needs_initials():
+            new_location = remember_location(new_location)
             proposed = {
                 "Item": name, "Unit": unit, "Category": category, "Reorder at": new_reorder or "",
                 "Location": new_location, "Cat. No.": new_cat, "Notes": new_notes,

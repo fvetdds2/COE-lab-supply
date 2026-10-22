@@ -31,6 +31,7 @@ from zoneinfo import ZoneInfo
 
 INVENTORY_TAB = "Inventory"
 LOG_TAB = "Change log"
+LOCATIONS_TAB = "Locations"
 SAMPLES_PER_RUN = 96
 TIMEZONE = ZoneInfo("America/Chicago")
 
@@ -40,6 +41,18 @@ HEADERS = [
     "Status", "Location", "Last checked", "Checked by", "Notes",
 ]
 LOG_HEADERS = ["Timestamp", "User", "Item ID", "Item", "Field", "Old value", "New value"]
+LOCATION_HEADERS = ["Location", "Added by", "Added on"]
+# Storage places offered in every location list; staff can add more (saved in the Locations tab).
+PRESET_LOCATIONS = [
+    "KingFisher bench, drawers",
+    "Centrifuge bench",
+    "Supply cabinet A",
+    "Supply cabinet B",
+    "Kit storage",
+    "Flammables cabinet",
+    "Shipping station",
+    "PPE and waste station",
+]
 NUMERIC_FIELDS = {"Per sample", "Per run", "Target", "On hand", "Reorder at"}
 EDITABLE_FIELDS = [h for h in HEADERS if h not in ("Item ID", "Last checked", "Checked by")]
 STATUS_OPTIONS = ["In stock", "Low", "Ordered", "Out of stock"]
@@ -222,12 +235,13 @@ def restock_report(items: list[dict], goal_samples: int) -> tuple[list[MeterRow]
 # --------------------------------------------------------------------------- sheet access
 
 class InventorySheet:
-    """Reads and writes the Inventory and Change log tabs of one spreadsheet."""
+    """Reads and writes the Inventory, Change log and Locations tabs of one spreadsheet."""
 
     def __init__(self, spreadsheet):
         self.spreadsheet = spreadsheet
         self.inventory = self._tab(INVENTORY_TAB, HEADERS)
         self.log = self._tab(LOG_TAB, LOG_HEADERS)
+        self.places = self._tab(LOCATIONS_TAB, LOCATION_HEADERS)
 
     def _tab(self, title: str, headers: list[str]):
         try:
@@ -262,6 +276,30 @@ class InventorySheet:
             if row and row[0].strip().upper() == item_id.strip().upper():
                 return row_number, {h: (row[i] if i < len(row) else "") for i, h in enumerate(HEADERS)}
         raise InventoryError(f"No item with ID {item_id}.")
+
+    def locations(self) -> list[str]:
+        """Preset locations, then the ones staff added, without duplicates."""
+        added = [r[0].strip() for r in self.places.get_all_values()[1:] if r and r[0].strip()]
+        seen, result = set(), []
+        for name in PRESET_LOCATIONS + added:
+            if name.lower() not in seen:
+                seen.add(name.lower())
+                result.append(name)
+        return result
+
+    def add_location(self, name: str, user: str) -> str:
+        """Save a new location to the Locations tab and the change log; returns the cleaned name."""
+        name = " ".join(str(name).split())
+        if not name:
+            raise InventoryError("Enter a location name.")
+        if not user.strip():
+            raise InventoryError("Enter your initials first.")
+        known = {n.lower(): n for n in self.locations()}
+        if name.lower() in known:
+            return known[name.lower()]
+        self.places.append_row([name, user.strip().upper(), now_text()], value_input_option="USER_ENTERED")
+        self._log(user.strip().upper(), "-", "(location list)", "New location", "", name)
+        return name
 
     def changes(self, limit: int = 200) -> list[dict]:
         values = self.log.get_all_values()
