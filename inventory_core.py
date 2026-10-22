@@ -30,7 +30,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 # Bumped whenever app.py starts relying on something new in this module.
-CORE_VERSION = 3
+CORE_VERSION = 4
 
 INVENTORY_TAB = "Inventory"
 LOG_TAB = "Change log"
@@ -44,18 +44,31 @@ HEADERS = [
     "Status", "Location", "Last checked", "Checked by", "Notes",
 ]
 LOG_HEADERS = ["Timestamp", "User", "Item ID", "Item", "Field", "Old value", "New value"]
-LOCATION_HEADERS = ["Location", "Added by", "Added on"]
-# Storage places offered in every location list; staff can add more (saved in the Locations tab).
-PRESET_LOCATIONS = [
-    "KingFisher bench, drawers",
-    "Centrifuge bench",
-    "Supply cabinet A",
-    "Supply cabinet B",
-    "Kit storage",
-    "Flammables cabinet",
-    "Shipping station",
-    "PPE and waste station",
+LOCATION_HEADERS = ["Location", "Added by", "Added on", "Map X", "Map Y", "Note"]
+# Storage places from the lab floor plan: (name, % across the map, % down the map).
+# None means the place is not drawn on the map yet. Staff can move pins, add notes and add
+# places in the app; those changes are saved in the Locations tab and override these defaults.
+PRESET_PLACES = [
+    ("4 °C fridge", 33.6, 5.5),
+    ("-20 °C freezer #1", 64.6, 5.5),
+    ("Cold storage supply cabinet", 75.0, 5.5),
+    ("Cold storage supply shelf", 92.5, 5.5),
+    ("Freezer supplies table", 48.9, 41.8),
+    ("Freezer box cabinet 1", 65.1, 42.2),
+    ("Freezer box cabinet 2", 74.7, 42.2),
+    ("Delivery desk", 21.0, 51.3),
+    ("PPE station", 49.0, 51.3),
+    ("Supply cabinet 1, upper", 57.9, 53.6),
+    ("Supply cabinet 1, lower", 57.9, 57.7),
+    ("Supply cabinet 2, upper", 70.8, 53.6),
+    ("Supply cabinet 2, lower", 70.8, 57.7),
+    ("Supply cabinet 3, upper", 38.0, 89.4),
+    ("Supply cabinet 3, lower", 38.0, 93.0),
+    ("Supply cabinet 4, upper", 50.3, 89.4),
+    ("Supply cabinet 4, lower", 50.3, 93.0),
+    ("Flammables cabinet", None, None),
 ]
+PRESET_LOCATIONS = [name for name, _, _ in PRESET_PLACES]
 NUMERIC_FIELDS = {"Per sample", "Per run", "Target", "On hand", "Reorder at"}
 EDITABLE_FIELDS = [h for h in HEADERS if h not in ("Item ID", "Last checked", "Checked by")]
 STATUS_OPTIONS = ["In stock", "Low", "Ordered", "Out of stock"]
@@ -251,6 +264,8 @@ class InventorySheet:
             ws = self.spreadsheet.worksheet(title)
         except _NOT_FOUND:
             ws = self.spreadsheet.add_worksheet(title=title, rows=1000, cols=len(headers))
+        if hasattr(ws, "col_count") and ws.col_count < len(headers):
+            ws.add_cols(len(headers) - ws.col_count)  # older tab with fewer columns
         first_row = ws.get_all_values()[:1]
         if not first_row or first_row[0][: len(headers)] != headers:
             if first_row and any(cell.strip() for cell in first_row[0]):
@@ -280,17 +295,48 @@ class InventorySheet:
                 return row_number, {h: (row[i] if i < len(row) else "") for i, h in enumerate(HEADERS)}
         raise InventoryError(f"No item with ID {item_id}.")
 
-    def locations(self) -> list[str]:
-        """Preset locations, then the ones staff added, without duplicates."""
-        added = [r[0].strip() for r in self.places.get_all_values()[1:] if r and r[0].strip()]
-        seen, result = set(), []
-        for name in PRESET_LOCATIONS + added:
-            if name.lower() not in seen:
-                seen.add(name.lower())
-                result.append(name)
+    # ---- storage locations
+    def _saved_places(self) -> list[list[str]]:
+        rows = self.places.get_all_values()[1:]
+        return [(r + [""] * len(LOCATION_HEADERS))[: len(LOCATION_HEADERS)] for r in rows if r and r[0].strip()]
+
+    @staticmethod
+    def _coord(value) -> float | None:
+        try:
+            number = to_number(value)
+        except InventoryError:
+            return None
+        return None if number is None else max(0.0, min(100.0, number))
+
+    def location_details(self) -> list[dict]:
+        """Every location with its map position and note: presets first, then ones staff added."""
+        saved = {}
+        for name, by, on, x, y, note in self._saved_places():
+            saved.setdefault(name.strip().lower(), {
+                "name": name.strip(), "added_by": by, "x": self._coord(x), "y": self._coord(y),
+                "note": note, "saved": True,
+            })
+        result, seen = [], set()
+        for name, x, y in PRESET_PLACES:
+            row = saved.get(name.lower())
+            if row:
+                result.append({**row, "name": name, "preset": True})
+            else:
+                result.append({"name": name, "added_by": "", "x": x, "y": y, "note": "", "saved": False,
+                               "preset": True})
+            seen.add(name.lower())
+        for key, row in saved.items():
+            if key not in seen:
+                result.append({**row, "preset": False})
+                seen.add(key)
         return result
 
-    def add_location(self, name: str, user: str) -> str:
+    def locations(self) -> list[str]:
+        """Location names: presets first, then the ones staff added."""
+        return [d["name"] for d in self.location_details()]
+
+    def add_location(self, name: str, user: str, x: float | None = None, y: float | None = None,
+                     note: str = "") -> str:
         """Save a new location to the Locations tab and the change log; returns the cleaned name."""
         name = " ".join(str(name).split())
         if not name:
@@ -300,9 +346,36 @@ class InventorySheet:
         known = {n.lower(): n for n in self.locations()}
         if name.lower() in known:
             return known[name.lower()]
-        self.places.append_row([name, user.strip().upper(), now_text()], value_input_option="USER_ENTERED")
+        self.places.append_row([name, user.strip().upper(), now_text(), clean_number(x) if x is not None else "",
+                                clean_number(y) if y is not None else "", note.strip()],
+                               value_input_option="USER_ENTERED")
         self._log(user.strip().upper(), "-", "(location list)", "New location", "", name)
         return name
+
+    def update_location(self, name: str, user: str, x: float | None, y: float | None, note: str) -> None:
+        """Save a location's map position (None, None = not on the map) and note."""
+        if not user.strip():
+            raise InventoryError("Enter your initials first.")
+        who = user.strip().upper()
+        current = next((d for d in self.location_details() if d["name"].lower() == name.lower()), None)
+        if current is None:
+            raise InventoryError(f"No location called {name}.")
+        x = None if x is None else round(max(0.0, min(100.0, float(x))), 1)
+        y = None if y is None else round(max(0.0, min(100.0, float(y))), 1)
+        note = str(note or "").strip()
+        values = ["" if x is None else x, "" if y is None else y, note]
+        row_number = next((i for i, r in enumerate(self.places.get_all_values()[1:], start=2)
+                           if r and r[0].strip().lower() == name.lower()), None)
+        if row_number:
+            self.places.update(values=[values], range_name=f"D{row_number}:F{row_number}",
+                               value_input_option="USER_ENTERED")
+        else:
+            self.places.append_row([current["name"], who, now_text(), *values], value_input_option="USER_ENTERED")
+        where = lambda a, b: "not on map" if a is None else f"{a}, {b}"  # noqa: E731
+        if (current["x"], current["y"]) != (x, y):
+            self._log(who, "-", current["name"], "Map position", where(current["x"], current["y"]), where(x, y))
+        if (current["note"] or "").strip() != note:
+            self._log(who, "-", current["name"], "Location note", current["note"], note)
 
     def changes(self, limit: int = 200) -> list[dict]:
         values = self.log.get_all_values()
@@ -455,9 +528,15 @@ class MemoryWorksheet:
     def update(self, values, range_name, value_input_option=None):
         start = range_name.split(":")[0]
         row_number = int("".join(ch for ch in start if ch.isdigit()))
+        col = 0
+        for ch in "".join(ch for ch in start if ch.isalpha()).upper():
+            col = col * 26 + (ord(ch) - 64)
         while len(self.rows) < row_number:
             self.rows.append([])
-        self.rows[row_number - 1] = ["" if v is None else str(v) for v in values[0]]
+        row = self.rows[row_number - 1]
+        new = ["" if v is None else str(v) for v in values[0]]
+        row.extend([""] * max(0, col - 1 + len(new) - len(row)))
+        row[col - 1: col - 1 + len(new)] = new
 
 
 class MemorySpreadsheet:
