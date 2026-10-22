@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hmac
 import html
+import io
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -52,6 +53,17 @@ FILTERS = {  # status filter above the item list -> states it shows
 }
 REFRESH_SECONDS = 30  # how often the meter and inventory re-read the sheet
 
+DEMO_LOCATIONS = {  # example locations for demo mode only
+    "MagMAX DNA Multi-Sample Ultra 2.0 Kit": "Supply cabinet A, shelf 1",
+    "KingFisher Apex 96 deep-well plates, barcoded": "Supply cabinet B",
+    "KingFisher Apex 96 KF microplates, barcoded": "Supply cabinet B",
+    "KingFisher 96 deep-well tip combs, barcoded": "Supply cabinet B",
+    "Ethanol, 96-100%, molecular biology grade": "Flammables cabinet",
+    "Filter tips, 20 uL": "Bench 2 drawers",
+    "Filter tips, 200 uL": "Bench 2 drawers",
+    "Filter tips, 300 uL": "Bench 2 drawers",
+    "2D-barcoded tubes": "Supply cabinet A, shelf 2",
+}
 DEMO_COUNTS = {  # example counts for demo mode only
     "MagMAX DNA Multi-Sample Ultra 2.0 Kit": 8,
     "KingFisher Apex 96 deep-well plates, barcoded": 200,
@@ -87,8 +99,13 @@ def demo_sheet() -> ic.InventorySheet:
         sheet = ic.InventorySheet(ic.MemorySpreadsheet())
         sheet.seed_starter_items("demo")
         for item in sheet.items():
+            changes = {}
             if item["Item"] in DEMO_COUNTS:
-                sheet.update_item(item["Item ID"], {"On hand": DEMO_COUNTS[item["Item"]]}, "demo")
+                changes["On hand"] = DEMO_COUNTS[item["Item"]]
+            if item["Item"] in DEMO_LOCATIONS:
+                changes["Location"] = DEMO_LOCATIONS[item["Item"]]
+            if changes:
+                sheet.update_item(item["Item ID"], changes, "demo")
         st.session_state.demo_sheet = sheet
     return st.session_state.demo_sheet
 
@@ -183,6 +200,7 @@ class Stock:
     when: str
     who: str
     cat_no: str
+    location: str
 
     @property
     def state(self) -> str:
@@ -203,11 +221,20 @@ class Stock:
         return scale
 
     @property
-    def order(self) -> float | None:
-        """Suggested order: up to the full-stock level when one is set."""
-        if self.state in ("out", "low") and self.full:
-            return max(self.full - (self.on_hand or 0), 0)
+    def suggested(self) -> float | None:
+        """Quantity to order: up to the full-stock level, or back to twice the minimum."""
+        if self.on_hand is None:
+            return None
+        if self.full and self.full > self.on_hand:
+            return self.full - self.on_hand
+        if self.minimum and 2 * self.minimum > self.on_hand:
+            return 2 * self.minimum - self.on_hand
         return None
+
+    @property
+    def order(self) -> float | None:
+        """Suggested order for items at or below their minimum."""
+        return self.suggested if self.state in ("out", "low") else None
 
 
 def stock_rows(items: list[dict]) -> list[Stock]:
@@ -219,6 +246,7 @@ def stock_rows(items: list[dict]) -> list[Stock]:
             on_hand=ic.to_number(i.get("On hand")), minimum=minimum or None,
             full=ic.to_number(i.get("Target")) or None, when=i.get("Last checked", ""),
             who=i.get("Checked by", ""), cat_no=i.get("Cat. No.", ""),
+            location=str(i.get("Location", "")).strip(),
         ))
     rows.sort(key=lambda r: (STATE_ORDER.index(r.state),
                              (r.on_hand or 0) / r.scale if r.scale else 1, r.item.lower()))
@@ -297,6 +325,8 @@ PAGE_CSS = """
 .item { padding: 14px 0 13px; }
 .item + .item { border-top: 1px solid var(--line); }
 .item-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.item-loc { display: flex; align-items: center; gap: 5px; font-size: 15px; color: var(--muted); margin-top: 3px; }
+.item-loc .pin { width: 15px; height: 15px; flex: none; }
 .item-name { font-size: 18px; font-weight: 600; color: var(--ink); line-height: 1.3; }
 .bar { position: relative; height: 10px; border-radius: 5px; background: var(--track); margin: 10px 0 8px; }
 .bar.unknown { background: repeating-linear-gradient(135deg, #eef1f5 0 6px, #e2e6ec 6px 12px); }
@@ -373,7 +403,7 @@ def summary_html(rows: list[Stock]) -> str:
         quiet.append(f"{uncounted} {'item is' if uncounted == 1 else 'items are'} not counted yet.")
     if no_min:
         quiet.append(f"{no_min} {'item has' if no_min == 1 else 'items have'} no minimum set. "
-                     "Use Set minimum alerts below to add one.")
+                     "Use Set minimums and locations below to add one.")
     quiet_html = "".join(f'<div class="sum-quiet">{q}</div>' for q in quiet)
     if alerts:
         names = ", ".join(html.escape(r.item) for r in alerts[:6])
@@ -415,15 +445,26 @@ def item_html(r: Stock) -> str:
     if r.when:
         by = f" by {html.escape(str(r.who))}" if r.who else ""
         meta.append(f'<span class="when">Checked {html.escape(short_date(r.when))}{by}</span>')
-    return (f'<div class="item"><div class="item-top"><div class="item-name">{html.escape(r.item)}</div>'
-            f'{pill(r.state)}</div>{bar}<div class="item-meta">{"".join(meta)}</div></div>')
+    where = (f'<div class="item-loc">{PIN}{html.escape(r.location)}</div>' if r.location else "")
+    return (f'<div class="item"><div class="item-top"><div><div class="item-name">{html.escape(r.item)}</div>'
+            f'{where}</div>{pill(r.state)}</div>{bar}<div class="item-meta">{"".join(meta)}</div></div>')
 
 
-def groups_html(rows: list[Stock], category_order: list[str]) -> str:
+PIN = ('<svg class="pin" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" '
+       'd="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5'
+       'a2.5 2.5 0 0 1 0 5z"/></svg>')
+NO_LOCATION = "No location set"
+
+
+def groups_html(rows: list[Stock], group_order: list[str], by: str = "category") -> str:
     groups: dict[str, list[Stock]] = {}
     for r in rows:
-        groups.setdefault(r.category or "Other", []).append(r)
-    order = [c for c in category_order if c in groups] + sorted(c for c in groups if c not in category_order)
+        key = (r.category or "Other") if by == "category" else (r.location or NO_LOCATION)
+        groups.setdefault(key, []).append(r)
+    order = [c for c in group_order if c in groups] + sorted(c for c in groups if c not in group_order)
+    if NO_LOCATION in order:  # unplaced items last
+        order.remove(NO_LOCATION)
+        order.append(NO_LOCATION)
     parts = []
     for cat in order:
         body = "".join(item_html(r) for r in groups[cat])
@@ -450,6 +491,12 @@ def item_picker(items: list[dict], key: str, label: str = "Item") -> dict:
     chosen = st.selectbox(label, list(by_id), key=key,
                           format_func=lambda i: f"{by_id[i]['Item']} ({i})")
     return by_id[chosen]
+
+
+def show_location(item: dict) -> None:
+    place = str(item.get("Location", "")).strip()
+    st.markdown(f'<div class="item-loc">{PIN}{html.escape(place) if place else "No location set"}</div>',
+                unsafe_allow_html=True)
 
 
 def on_hand_text(item: dict) -> str:
@@ -557,7 +604,7 @@ if not items:
         added = sheet.seed_starter_items(user)
         flash(f"Added {added} starter items.")
 
-VIEWS = ["Meter", "Receive", "Use", "Count", "Items", "Edit", "Log"]
+VIEWS = ["Meter", "Order", "Receive", "Use", "Count", "Items", "Edit", "Log"]
 view = st.segmented_control("Go to", VIEWS, default="Meter", key="view", label_visibility="collapsed")
 view = view or "Meter"
 
@@ -575,14 +622,16 @@ def clean_min(value) -> float | None:
 
 
 def minimum_editor(items: list[dict]) -> None:
-    with st.expander("Set minimum alerts", icon=":material/notifications:"):
+    with st.expander("Set minimums and locations", icon=":material/edit_note:"):
         st.caption("Each item turns Low stock, and shows in the alert above, when its count is at or below "
-                   "its minimum. Leave a minimum blank or 0 for no alert.")
+                   "its minimum. Leave a minimum blank or 0 for no alert. Location is where staff find "
+                   "the item, for example Supply cabinet A, shelf 2.")
         order = list(dict.fromkeys(i["Category"] for i in items))
         ordered = sorted(items, key=lambda i: (order.index(i["Category"]), i["Item"].lower()))
         table = pd.DataFrame([{
             "Item ID": i["Item ID"], "Item": i["Item"], "On hand": ic.to_number(i["On hand"]),
             "Unit": i["Unit"], "Minimum": clean_min(ic.to_number(i["Reorder at"])),
+            "Location": str(i.get("Location", "")),
         } for i in ordered])
         edited = st.data_editor(
             table, key="minimum_table", hide_index=True, width="stretch", num_rows="fixed",
@@ -593,19 +642,29 @@ def minimum_editor(items: list[dict]) -> None:
                 "On hand": st.column_config.NumberColumn("On hand", format="%g"),
                 "Minimum": st.column_config.NumberColumn("Minimum", min_value=0, step=1, format="%g",
                                                          help="Alert when the count is at or below this."),
+                "Location": st.column_config.TextColumn("Location", width="medium",
+                                                        help="Where staff find the item."),
             },
         )
-        if st.button("Save minimums", type="primary", key="save_minimums") and not needs_initials():
-            changed = [(row["Item ID"], clean_min(row["Minimum"]))
-                       for (_, row), (_, before) in zip(edited.iterrows(), table.iterrows())
-                       if clean_min(row["Minimum"]) != clean_min(before["Minimum"])]
+        if st.button("Save changes", type="primary", key="save_minimums") and not needs_initials():
+            changed = []
+            for (_, row), (_, before) in zip(edited.iterrows(), table.iterrows()):
+                update = {}
+                if clean_min(row["Minimum"]) != clean_min(before["Minimum"]):
+                    minimum = clean_min(row["Minimum"])
+                    update["Reorder at"] = minimum if minimum else ""
+                new_place = "" if pd.isna(row["Location"]) else str(row["Location"]).strip()
+                if new_place != str(before["Location"]).strip():
+                    update["Location"] = new_place
+                if update:
+                    changed.append((row["Item ID"], update))
             if not changed:
-                st.info("No minimums changed.")
+                st.info("Nothing changed.")
             else:
-                for item_id, minimum in changed:
-                    sheet.update_item(item_id, {"Reorder at": minimum if minimum else ""}, user)
+                for item_id, update in changed:
+                    sheet.update_item(item_id, update, user)
                 st.session_state.pop("minimum_table", None)
-                flash(f"Saved {len(changed)} minimum{'s' if len(changed) != 1 else ''} ({user}).")
+                flash(f"Saved changes to {len(changed)} item{'s' if len(changed) != 1 else ''} ({user}).")
 
 
 @st.fragment(run_every=REFRESH_SECONDS)
@@ -613,18 +672,27 @@ def meter_list() -> None:
     items = current_items()
     rows = stock_rows(items)
     counts = {name: sum(1 for r in rows if r.state in states) for name, states in FILTERS.items()}
-    f1, f2 = st.columns([3, 1], vertical_alignment="bottom")
+    f1, f2, f3 = st.columns([2.5, 1.1, 1.3], vertical_alignment="center")
     with f1:
         picked = st.pills("Show", [n for n in FILTERS if n == "All" or counts[n]], default="All",
                           key="meter_filter", label_visibility="collapsed",
                           format_func=lambda n: f"{n} {counts[n]}")
-    category_order = list(dict.fromkeys(i["Category"] for i in items if i.get("Category")))
-    chosen = f2.selectbox("Category", ["All categories"] + category_order, key="meter_category",
-                          label_visibility="collapsed")
+    by = f2.segmented_control("Group by", ["Category", "Location"], default="Category", key="meter_group",
+                              label_visibility="collapsed") or "Category"
+    if by == "Category":
+        group_order = list(dict.fromkeys(i["Category"] for i in items if i.get("Category")))
+        chosen = f3.selectbox("Category", ["All categories"] + group_order, key="meter_category",
+                              label_visibility="collapsed")
+        keep = lambda r: chosen == "All categories" or r.category == chosen  # noqa: E731
+    else:
+        group_order = sorted({r.location for r in rows if r.location}, key=str.lower)
+        options = ["All locations"] + group_order + ([NO_LOCATION] if any(not r.location for r in rows) else [])
+        chosen = f3.selectbox("Location", options, key="meter_location", label_visibility="collapsed")
+        keep = lambda r: chosen == "All locations" or (r.location or NO_LOCATION) == chosen  # noqa: E731
     states = FILTERS.get(picked or "All", FILTERS["All"])
-    shown = [r for r in rows if r.state in states and (chosen == "All categories" or r.category == chosen)]
+    shown = [r for r in rows if r.state in states and keep(r)]
     if shown:
-        st.markdown(groups_html(shown, category_order), unsafe_allow_html=True)
+        st.markdown(groups_html(shown, group_order, by.lower()), unsafe_allow_html=True)
         st.markdown(
             '<p class="list-foot">The magenta bar shows stock on hand against the full-stock level, or '
             "against twice the minimum when no full-stock level is set. The dark mark is the minimum. "
@@ -632,19 +700,110 @@ def meter_list() -> None:
     else:
         st.caption("No items match this filter.")
 
-    short = [r for r in rows if r.state in ("out", "low")]
-    with st.expander(f"Shopping list ({len(short)} items)"):
-        if short:
-            shop = pd.DataFrame([{
-                "Item": r.item, "Cat. No.": r.cat_no, "Unit": r.unit, "On hand": r.on_hand,
-                "Minimum": r.minimum, "Full stock": r.full, "Suggested order": r.order,
-                "Status": STATES[r.state][0],
-            } for r in short])
-            st.dataframe(shop, hide_index=True, width="stretch")
-            st.download_button("Download shopping list (CSV)", shop.to_csv(index=False),
-                               file_name="shopping_list.csv", mime="text/csv")
-        else:
-            st.success("Nothing is at or below its minimum.")
+
+# ---- Order list
+def go_to_order() -> None:
+    st.session_state.view = "Order"
+
+
+def order_excel(table: pd.DataFrame, who: str) -> bytes | None:
+    """The order list as an .xlsx file, or None when the Excel writer is not installed."""
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Font, PatternFill
+        from openpyxl.utils import get_column_letter
+    except ImportError:
+        return None
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Order list"
+    ws["A1"] = f"{APP_TITLE}: order list"
+    ws["A1"].font = Font(bold=True, size=14)
+    ws["A2"] = CENTER_NAME
+    ws["A3"] = f"Prepared {datetime.now(ic.TIMEZONE):%Y-%m-%d %H:%M}" + (f" by {who}" if who else "")
+    ws["A2"].font = ws["A3"].font = Font(color="5B6474")
+    header_row = 5
+    for col, name in enumerate(table.columns, 1):
+        cell = ws.cell(row=header_row, column=col, value=name)
+        cell.font = Font(bold=True)
+        cell.fill = PatternFill("solid", fgColor="F2F4F7")
+        cell.alignment = Alignment(vertical="center")
+    for r_i, row in enumerate(table.itertuples(index=False), header_row + 1):
+        for c_i, value in enumerate(row, 1):
+            ws.cell(row=r_i, column=c_i, value=None if pd.isna(value) else value)
+    widths = {"Item": 46, "Cat. No.": 14, "Unit": 10, "On hand": 10, "Minimum": 10, "Order qty": 11,
+              "Location": 26, "Notes": 30}
+    for col, name in enumerate(table.columns, 1):
+        ws.column_dimensions[get_column_letter(col)].width = widths.get(name, 14)
+    ws.freeze_panes = ws.cell(row=header_row + 1, column=1)
+    out = io.BytesIO()
+    wb.save(out)
+    return out.getvalue()
+
+
+def order_view(items: list[dict]) -> None:
+    st.subheader("Order list")
+    st.caption("Items at or below their minimum are ticked, with a suggested quantity: up to the full stock "
+               "level, or back to twice the minimum. Change any quantity, tick other items you want to add, "
+               "then download the list.")
+    rows = stock_rows(items)
+    rows.sort(key=lambda r: (r.state not in ("out", "low"), r.item.lower()))
+    table = pd.DataFrame([{
+        "Order": r.state in ("out", "low"), "Item ID": r.item_id, "Item": r.item, "Cat. No.": r.cat_no,
+        "Unit": r.unit, "On hand": "" if r.on_hand is None else fmt(r.on_hand),
+        "Minimum": "" if r.minimum is None else fmt(r.minimum), "Order qty": r.suggested,
+        "Location": r.location, "Notes": "",
+    } for r in rows])
+    table["Order qty"] = pd.to_numeric(table["Order qty"], errors="coerce").astype(float)
+    edited = st.data_editor(
+        table, key="order_table", hide_index=True, width="stretch", num_rows="fixed",
+        column_order=["Order", "Item", "Order qty", "Unit", "On hand", "Minimum", "Cat. No.", "Location", "Notes"],
+        disabled=["Item", "Cat. No.", "Unit", "On hand", "Minimum", "Location"],
+        column_config={
+            "Order": st.column_config.CheckboxColumn("Order", width="small"),
+            "Item ID": None,
+            "Item": st.column_config.TextColumn("Item", width="medium"),
+            "Order qty": st.column_config.NumberColumn("Order qty", min_value=0, step=1, format="%g",
+                                                       help="How many units to order."),
+            "Notes": st.column_config.TextColumn("Notes", help="Vendor, pack size or anything for the buyer."),
+        },
+    )
+    chosen = edited[edited["Order"] & edited["Order qty"].fillna(0).gt(0)]
+    missing_qty = edited[edited["Order"] & edited["Order qty"].fillna(0).le(0)]
+    if not missing_qty.empty:
+        st.warning("Enter an order quantity for: " + ", ".join(missing_qty["Item"]) + ".")
+    if chosen.empty:
+        st.info("Tick at least one item and give it an order quantity to download the list.")
+        return
+    def number(v):  # 1 rather than 1.0 in the files, blank when unknown
+        if v is None or pd.isna(v):
+            return None
+        return int(v) if float(v).is_integer() else float(v)
+
+    by_id = {r.item_id: r for r in rows}
+    export = pd.DataFrame([{
+        "Item": by_id[row["Item ID"]].item, "Cat. No.": by_id[row["Item ID"]].cat_no,
+        "Unit": by_id[row["Item ID"]].unit, "On hand": number(by_id[row["Item ID"]].on_hand),
+        "Minimum": number(by_id[row["Item ID"]].minimum), "Order qty": number(row["Order qty"]),
+        "Location": by_id[row["Item ID"]].location, "Notes": "" if pd.isna(row["Notes"]) else row["Notes"],
+    } for _, row in chosen.iterrows()])
+    st.markdown(f"**{len(export)} item{'s' if len(export) != 1 else ''} on the order list.**")
+    stamp = datetime.now(ic.TIMEZONE).strftime("%Y-%m-%d")
+    d1, d2, d3 = st.columns(3)
+    xlsx = order_excel(export, user)
+    if xlsx is not None:
+        d1.download_button("Download Excel", xlsx, file_name=f"order_list_{stamp}.xlsx", type="primary",
+                           icon=":material/download:", width="stretch",
+                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    d2.download_button("Download CSV", export.to_csv(index=False), file_name=f"order_list_{stamp}.csv",
+                       icon=":material/download:", width="stretch", mime="text/csv")
+    if d3.button("Mark these as Ordered", icon=":material/local_shipping:", width="stretch",
+                 help="Sets each ticked item's status to Ordered, saved with your initials."):
+        if not needs_initials():
+            for item_id in chosen["Item ID"]:
+                sheet.update_item(item_id, {"Status": "Ordered"}, user)
+            st.session_state.pop("order_table", None)
+            flash(f"Marked {len(chosen)} item{'s' if len(chosen) != 1 else ''} as Ordered ({user}).")
 
 
 # ---- Inventory table (re-reads the sheet on its own)
@@ -656,13 +815,14 @@ def inventory_view() -> None:
         return
     df = pd.DataFrame(items)
     s1, s2, s3 = st.columns([2, 1, 1])
-    query = s1.text_input("Search items", placeholder="Item name or catalog number", key="inv_query")
+    query = s1.text_input("Search items", placeholder="Item name, catalog number or location", key="inv_query")
     cat_filter = s2.selectbox("Category", ["All"] + sorted(df["Category"].replace("", pd.NA).dropna().unique()),
                               key="inv_cat")
     status_filter = s3.selectbox("Status", ["All"] + ic.STATUS_OPTIONS, key="inv_status")
     if query:
         df = df[df["Item"].str.contains(query, case=False, regex=False)
-                | df["Cat. No."].str.contains(query, case=False, regex=False)]
+                | df["Cat. No."].str.contains(query, case=False, regex=False)
+                | df["Location"].astype(str).str.contains(query, case=False, regex=False)]
     if cat_filter != "All":
         df = df[df["Category"] == cat_filter]
     if status_filter != "All":
@@ -670,7 +830,7 @@ def inventory_view() -> None:
     df = df.drop(columns=["Per sample", "Per run"], errors="ignore").rename(
         columns={"Reorder at": "Minimum", "Target": "Full stock"})
     if not st.toggle("Show all columns", key="inv_all"):
-        df = df[["Item", "On hand", "Unit", "Minimum", "Status", "Checked by", "Last checked"]]
+        df = df[["Item", "On hand", "Unit", "Minimum", "Location", "Status", "Checked by", "Last checked"]]
     st.dataframe(df, hide_index=True, width="stretch")
     st.download_button("Download inventory (CSV)", pd.DataFrame(items).to_csv(index=False),
                        file_name="coe_lab_inventory.csv", mime="text/csv")
@@ -679,8 +839,14 @@ def inventory_view() -> None:
 if view == "Meter":
     meter_summary()
     if items:
+        st.button("Make an order list", icon=":material/shopping_cart:", on_click=go_to_order,
+                  key="to_order", help="Opens the Order page with low-stock items already ticked.")
         minimum_editor(items)
     meter_list()
+
+elif view == "Order":
+    if items:
+        order_view(items)
 
 elif view == "Receive":
     st.subheader("Receive supplies")
@@ -710,11 +876,12 @@ elif view == "Receive":
                                              "Category": "" if category == "Other" else category,
                                              "Cat. No.": cat_no, "Location": location}, user)
                     flash(f"Added {name.strip()} ({new_id}) with {fmt(qty)} {plural(unit.strip(), qty)} "
-                          f"received by {user}. Set its minimum under Meter, Set minimum alerts.")
+                          f"received by {user}. Set its minimum under Meter, Set minimums and locations.")
                 except ic.InventoryError as exc:
                     st.error(str(exc))
     elif items:
         current = item_picker(items, key="receive_item")
+        show_location(current)
         st.metric("On hand now", on_hand_text(current))
         with st.form("receive_form", clear_on_submit=True):
             qty = st.number_input(f"Quantity received ({current['Unit'] or 'units'})", min_value=0.0, step=1.0)
@@ -731,6 +898,7 @@ elif view == "Use":
     st.subheader("Record supplies used")
     if items:
         current = item_picker(items, key="use_item")
+        show_location(current)
         st.metric("On hand now", on_hand_text(current))
         with st.form("use_form", clear_on_submit=True):
             qty = st.number_input(f"Quantity used ({current['Unit'] or 'units'})", min_value=0.0, step=1.0)
@@ -747,6 +915,7 @@ elif view == "Count":
     st.subheader("Shelf check")
     if items:
         current = item_picker(items, key="count_item")
+        show_location(current)
         st.metric("On hand in the app", on_hand_text(current),
                   help=f"Last checked {current['Last checked'] or 'never'} by {current['Checked by'] or '-'}")
         with st.form("count_form"):
