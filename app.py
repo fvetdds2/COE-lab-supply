@@ -4,6 +4,7 @@ import base64
 import hmac
 import html
 import io
+import re
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -98,7 +99,7 @@ DEMO_COUNTS = {  # example counts for demo mode only
 
 # --------------------------------------------------------------------------- connection
 
-REQUIRED_CORE = 6  # the inventory_core.py version this app.py needs
+REQUIRED_CORE = 7  # the inventory_core.py version this app.py needs
 
 
 def check_core_version() -> None:
@@ -382,16 +383,40 @@ PAGE_CSS = """
 .map-scroll { overflow-x: auto; border-radius: 14px; border: 1px solid var(--line); background: #fff; }
 .map-wrap { position: relative; }
 .map-wrap img { width: 100%; display: block; }
-.pin { position: absolute; transform: translate(-50%, -50%); min-width: 26px; height: 26px; padding: 0 4px;
-       border-radius: 13px; background: var(--magenta); color: #fff; font-size: 13px; font-weight: 700;
+.mpin { position: absolute; transform: translate(-50%, -50%); min-width: 22px; height: 22px; padding: 0 5px;
+       border-radius: 11px; background: var(--magenta); color: #fff; font-size: 12px; font-weight: 700;
        display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box;
-       border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.35); cursor: default; }
-.pin.low { background: #b45309; }
-.pin.out { background: #b42318; }
-.pin.empty { background: #6b7280; }
-.pin.sel { outline: 3px solid #1f2937; outline-offset: 1px; z-index: 2; transform: translate(-50%, -50%) scale(1.25); }
-.pin.dim { opacity: 0.35; }
-.pin.badge { position: static; transform: none; flex: none; box-shadow: none; }
+       border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.35); text-decoration: none !important;
+       line-height: 1; cursor: pointer; }
+a.mpin, a.mpin:visited, a.mpin:hover { color: #fff; }
+a.mpin:hover { transform: translate(-50%, -50%) scale(1.2); z-index: 3; }
+.mpin.low { background: #b45309; }
+.mpin.out { background: #b42318; }
+.mpin.empty { min-width: 12px; width: 12px; height: 12px; padding: 0; background: #fff; border: 2px solid #9aa3af;
+             box-shadow: none; }
+.mpin.sel { z-index: 4; transform: translate(-50%, -50%) scale(1.35); outline: 3px solid #1f2937; outline-offset: 2px;
+           animation: pin-pulse 1.4s ease-out infinite; }
+.mpin.dim { opacity: 0.3; }
+.mpin.badge { position: static; transform: none; flex: none; box-shadow: none; cursor: default; }
+.mpin.badge.empty { min-width: 14px; width: 14px; height: 14px; }
+@keyframes pin-pulse { 0% { box-shadow: 0 0 0 0 rgba(31,41,55,0.55); } 100% { box-shadow: 0 0 0 16px rgba(31,41,55,0); } }
+@media (prefers-reduced-motion: reduce) { .mpin.sel { animation: none; } }
+.find-box { display: flex; gap: 12px; align-items: flex-start; background: #fff7fb; border: 1px solid #f3c6dd;
+            border-radius: 14px; padding: 12px 16px; margin: 4px 0 12px; }
+.find-box > svg.pin { position: static; transform: none; width: 22px; height: 22px; min-width: 0; padding: 0;
+                      border: 0; box-shadow: none; background: none; color: var(--magenta); flex: none; margin-top: 2px;
+                      cursor: default; }
+.find-item { font-size: 18px; font-weight: 700; color: var(--ink); }
+.find-item span { font-weight: 400; color: var(--muted); font-size: 15px; margin-left: 10px; }
+.find-trail { font-size: 17px; color: var(--ink); margin-top: 2px; }
+.find-note { font-size: 14px; color: var(--muted); margin-top: 4px; }
+.room-head { font-size: 15px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+             color: var(--muted); margin: 22px 2px 0; }
+.spot { font-size: 13px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; color: var(--muted);
+        margin: 12px 0 0; }
+.loc-empty.small { font-size: 14px; margin-top: 4px; }
+.loc-card { scroll-margin-top: 90px; }
+.loc-card:target { outline: 3px solid var(--magenta); outline-offset: 2px; }
 .map-key { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 15px; color: var(--muted); margin: 10px 2px 4px; }
 .map-key span { display: inline-flex; align-items: center; gap: 6px; }
 .map-key i { width: 14px; height: 14px; border-radius: 50%; display: inline-block; }
@@ -933,7 +958,7 @@ def map_image() -> str | None:
 
 
 PIN_KEY = [("ok", METER, "Has supplies"), ("low", "#b45309", "Something low"), ("out", "#b42318", "Something out"),
-           ("empty", "#6b7280", "Nothing stored yet")]
+           ("empty", "#9aa3af", "Nothing stored yet")]
 
 
 def place_state(stored: list[Stock]) -> str:
@@ -945,61 +970,107 @@ def place_state(stored: list[Stock]) -> str:
     return "ok" if stored else "empty"
 
 
-def map_html(uri: str, places: list[dict], numbers: dict, stored: dict, highlight: str | None = None,
-             moved: tuple | None = None) -> str:
-    pins = []
-    for d in places:
-        x, y = (moved if moved and d["name"] == highlight else (d["x"], d["y"]))
+def slug(name: str) -> str:
+    return "loc-" + re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+
+
+def place_of(location: str, mains: dict) -> tuple[str, str]:
+    """(main place, storage spot label) for an item's Location; the spot is "" when it sits on the place itself."""
+    loc = " ".join(str(location or "").split())
+    if not loc:
+        return "", ""
+    if loc.lower() in mains:
+        return mains[loc.lower()], ""
+    parent = ic.parent_place(loc)
+    if parent:
+        return parent, ic.spot_label(loc, parent)
+    return loc, ""
+
+
+def map_html(uri: str, pins: list[dict], highlight: str | None = None, moved: tuple | None = None) -> str:
+    """The floor plan with one badge per place: the number of supplies stored there (incl. its cabinets
+    and drawers), colored by stock state. Hover shows the name; a click jumps to the place's card."""
+    marks = []
+    for p in pins:
+        x, y = moved if moved and p["name"] == highlight else (p["x"], p["y"])
         if x is None or y is None:
             continue
-        here = stored.get(d["name"].lower(), [])
-        low = sum(1 for r in here if r.state in ("out", "low"))
-        tip = f"{numbers[d['name']]}. {d['name']}: {len(here)} suppl{'y' if len(here) == 1 else 'ies'}"
-        tip += f", {low} low or out" if low else ""
-        extra = (" sel" if d["name"] == highlight else " dim") if highlight else ""
-        pins.append(f'<span class="pin {place_state(here)}{extra}" style="left:{x}%;top:{y}%;" '
-                    f'title="{html.escape(tip)}">{numbers[d["name"]]}</span>')
+        n = p["count"]
+        tip = f"{p['name']}: " + (f"{n} suppl{'y' if n == 1 else 'ies'}" if n else "nothing stored yet")
+        tip += f", {p['low']} low or out" if p["low"] else ""
+        cls = f"mpin {p['state']}" + ((" sel" if p["name"] == highlight else " dim") if highlight else "")
+        marks.append(f'<a class="{cls}" href="#{slug(p["name"])}" style="left:{x}%;top:{y}%;" '
+                     f'title="{html.escape(tip)}" aria-label="{html.escape(tip)}">{n or ""}</a>')
     return (f'<div class="map-scroll"><div class="map-wrap"><img src="{uri}" alt="Lab floor plan">'
-            f'{"".join(pins)}</div></div>')
+            f'{"".join(marks)}</div></div>')
 
 
-def location_cards(places: list[dict], numbers: dict, stored: dict) -> str:
-    cards = []
-    for d in places:
-        here = sorted(stored.get(d["name"].lower(), []), key=lambda r: r.item.lower())
-        badge = (f'<span class="pin badge {place_state(here)}">{numbers[d["name"]]}</span>'
-                 if d["name"] in numbers else '<span class="pin badge empty">–</span>')
-        lines = []
-        for r in here:
-            qty = "not counted" if r.on_hand is None else f"{fmt(r.on_hand)} {plural(r.unit, r.on_hand)}"
-            flag = pill(r.state) if r.state in ("out", "low") else ""
-            lines.append(f'<li><span>{html.escape(r.item)}</span><span class="qty">{html.escape(qty)} {flag}</span></li>')
-        note = f'<div class="loc-note">{html.escape(d["note"])}</div>' if d.get("note") else ""
-        where = "" if d["name"] in numbers else '<div class="loc-empty">Not on the map yet.</div>'
-        body = f'<ul class="loc-items">{"".join(lines)}</ul>' if lines else '<div class="loc-empty">No supplies stored here yet.</div>'
-        cards.append(f'<div class="loc-card"><div class="loc-head">{badge}<div class="loc-name">{html.escape(d["name"])}'
-                     f'<span class="loc-count">{len(here)}</span></div></div>{note}{where}{body}</div>')
-    return f'<div class="loc-grid">{"".join(cards)}</div>'
+def item_line(r: Stock) -> str:
+    qty = "not counted" if r.on_hand is None else f"{fmt(r.on_hand)} {plural(r.unit, r.on_hand)}"
+    flag = pill(r.state) if r.state in ("out", "low") else ""
+    return f'<li><span>{html.escape(r.item)}</span><span class="qty">{html.escape(qty)} {flag}</span></li>'
+
+
+def place_card(p: dict, show_empty_spots: bool) -> str:
+    """One card: the place, its note, then each storage spot (cabinet, drawer, shelf) with what is in it."""
+    badge = f'<span class="mpin badge {p["state"]}">{p["count"] or ""}</span>'
+    note = f'<div class="loc-note">{html.escape(p["note"])}</div>' if p.get("note") else ""
+    where = "" if p["x"] is not None else '<div class="loc-empty">Not on the map.</div>'
+    groups = []
+    loose = sorted(p["spots"].get("", []), key=lambda r: r.item.lower())
+    if loose:
+        label = '<div class="spot">On the place itself</div>' if len(p["spots"]) > 1 else ""
+        groups.append(f'{label}<ul class="loc-items">{"".join(item_line(r) for r in loose)}</ul>')
+    for spot in p["spot_order"]:
+        here = sorted(p["spots"].get(spot, []), key=lambda r: r.item.lower())
+        if not here and not show_empty_spots:
+            continue
+        body = (f'<ul class="loc-items">{"".join(item_line(r) for r in here)}</ul>' if here
+                else '<div class="loc-empty small">Empty</div>')
+        groups.append(f'<div class="spot">{html.escape(spot)}</div>{body}')
+    if not groups:
+        groups.append('<div class="loc-empty">No supplies stored here yet.</div>')
+    return (f'<div class="loc-card" id="{slug(p["name"])}"><div class="loc-head">{badge}'
+            f'<div class="loc-name">{html.escape(p["name"])}<span class="loc-count">{p["count"]}</span></div></div>'
+            f'{note}{where}{"".join(groups)}</div>')
+
+
+def build_places(details: list[dict], rows: list[Stock]) -> tuple[list[dict], dict]:
+    """Main places (with their storage spots and the supplies in each), and a lower-case name -> place lookup."""
+    mains: dict[str, str] = {}
+    for d in details:
+        if not ic.parent_place(d["name"]):
+            mains[d["name"].lower()] = d["name"]
+    places = {d["name"]: {**d, "spots": {}, "spot_order": [], "count": 0, "low": 0}
+              for d in details if d["name"].lower() in mains}
+    for d in details:  # storage spots in list order, so cabinets and drawers read in number order
+        parent = ic.parent_place(d["name"])
+        if parent and parent in places:
+            places[parent]["spot_order"].append(ic.spot_label(d["name"], parent))
+    for r in rows:
+        if not r.location:
+            continue
+        main, spot = place_of(r.location, mains)
+        if main not in places:  # a place typed on an item that is not on the location list
+            places[main] = {"name": main, "x": None, "y": None, "note": "", "preset": False, "saved": False,
+                            "spots": {}, "spot_order": [], "count": 0, "low": 0}
+        p = places[main]
+        p["spots"].setdefault(spot, []).append(r)
+        if spot and spot not in p["spot_order"]:
+            p["spot_order"].append(spot)
+        p["count"] += 1
+        p["low"] += r.state in ("out", "low")
+    for p in places.values():
+        p["state"] = place_state([r for group in p["spots"].values() for r in group])
+    return list(places.values()), mains
 
 
 def map_view(items: list[dict]) -> None:
     st.subheader("Lab map")
     details = sheet.location_details()
     rows = stock_rows(items)
-    known = {d["name"].lower() for d in details}
-    # places typed on items but not on the location list still get a card
-    for name in sorted({r.location for r in rows if r.location and r.location.lower() not in known}, key=str.lower):
-        details.append({"name": name, "x": None, "y": None, "note": "", "preset": False, "saved": False})
-        known.add(name.lower())
-    stored: dict[str, list[Stock]] = {}
-    for r in rows:
-        if r.location:
-            stored.setdefault(r.location.lower(), []).append(r)
-    numbers = {}
-    for d in details:
-        if d["x"] is not None and d["y"] is not None:
-            numbers[d["name"]] = len(numbers) + 1
-
+    places, mains = build_places(details, rows)
+    by_name = {p["name"]: p for p in places}
     renamed, moved_pins = ((sheet.renamed_places_in_use(items), sheet.saved_pin_positions()) if demo
                            else load_map_checks(sheet))
     if renamed["items"] or renamed["places"]:
@@ -1026,65 +1097,111 @@ def map_view(items: list[dict]) -> None:
                 sheet.update_item(i["Item ID"], {"Location": SUGGESTED_PLACES[i["Item"]]}, user)
             flash(f"Filled in locations for {len(missing)} item{'s' if len(missing) != 1 else ''} ({user}).")
 
+    # ---- find a supply: the answer new staff need most
+    by_id = {r.item_id: r for r in rows}
+    pick = st.selectbox("Find a supply", sorted(by_id, key=lambda i: by_id[i].item.lower()), index=None,
+                        key="map_find", placeholder="Type a supply name to see where it is kept",
+                        format_func=lambda i: by_id[i].item)
+    highlight = None
+    if pick:
+        r = by_id[pick]
+        main, spot = place_of(r.location, mains)
+        qty = "not counted" if r.on_hand is None else f"{fmt(r.on_hand)} {plural(r.unit, r.on_hand)}"
+        if not main:
+            st.warning(f"**{r.item}** has no location yet. Set it under **Edit a location** below.")
+        else:
+            room = ic.ROOM_OF.get(main.lower(), "")
+            trail = " › ".join(html.escape(t) for t in (room, main, spot) if t)
+            on_map = by_name.get(main, {}).get("x") is not None
+            st.markdown(f'<div class="find-box">{PIN}<div><div class="find-item">{html.escape(r.item)}'
+                        f'<span>{html.escape(qty)}</span></div><div class="find-trail">{trail}</div>'
+                        + ("" if on_map else '<div class="find-note">This place is not drawn on the map.</div>')
+                        + '</div></div>', unsafe_allow_html=True)
+            highlight = main if on_map else None
+
     uri = map_image()
     if uri:
-        st.markdown(map_html(uri, details, numbers, stored), unsafe_allow_html=True)
+        st.markdown(map_html(uri, places, highlight), unsafe_allow_html=True)
         st.markdown('<div class="map-key">' + "".join(f'<span><i style="background:{c};"></i>{t}</span>'
                                                       for _, c, t in PIN_KEY)
-                    + "<span>Pin numbers match the cards below</span></div>", unsafe_allow_html=True)
+                    + "<span>The number is how many supplies are kept there. Tap a pin to see which cabinet "
+                      "or drawer.</span></div>", unsafe_allow_html=True)
     else:
         st.info("The map picture is missing. Put lab_map.jpg in the same folder as app.py.")
 
     unplaced = [r for r in rows if not r.location]
-    shown = st.segmented_control("Show", ["Places with supplies", "All places"], default="Places with supplies",
-                                 key="map_show", label_visibility="collapsed") or "Places with supplies"
-    cards = [d for d in details if shown == "All places" or stored.get(d["name"].lower())]
-    st.markdown(location_cards(cards, numbers, stored), unsafe_allow_html=True)
+    shown = st.segmented_control("Show", ["Places with supplies", "All places and empty spots"],
+                                 default="Places with supplies", key="map_show",
+                                 label_visibility="collapsed") or "Places with supplies"
+    show_all = shown != "Places with supplies"
+    sections = [(room, [by_name[n] for n in names if n in by_name]) for room, names in ic.ROOMS.items()]
+    listed = {n.lower() for names in ic.ROOMS.values() for n in names}
+    sections.append(("Other places", [p for p in places if p["name"].lower() not in listed]))
+    for room, group in sections:
+        cards = [p for p in group if show_all or p["count"]]
+        if not cards:
+            continue
+        st.markdown(f'<div class="room-head">{html.escape(room)}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="loc-grid">{"".join(place_card(p, show_all) for p in cards)}</div>',
+                    unsafe_allow_html=True)
     if unplaced:
         names = ", ".join(html.escape(r.item) for r in unplaced)
         st.markdown(f'<p class="list-foot">No location set: {names}.</p>', unsafe_allow_html=True)
 
     with st.expander("Edit a location", icon=":material/edit_location_alt:"):
-        by_name = {d["name"]: d for d in details}
-        pick = st.selectbox("Location", list(by_name), key="map_pick",
-                            format_func=lambda n: f"{numbers[n]}. {n}" if n in numbers else f"{n} (not on the map)")
-        d = by_name[pick]
+        all_names = [d["name"] for d in details] + [p["name"] for p in places if p["name"] not in
+                                                    {d["name"] for d in details}]
+        detail_of = {d["name"]: d for d in details}
+
+        def label(n: str) -> str:
+            parent = ic.parent_place(n)
+            if parent:
+                return f"{n}  (in {parent})"
+            return n if by_name.get(n, {}).get("x") is not None else f"{n}  (not on the map)"
+
+        pick = st.selectbox("Location", all_names, key="map_pick", format_func=label)
+        d = detail_of.get(pick) or {"name": pick, "x": None, "y": None, "note": "", "preset": False, "saved": False}
+        parent = ic.parent_place(pick)
         note = st.text_area("Note", value=d.get("note", ""), key=f"map_note_{pick}",
                             placeholder="e.g. Top shelf: tip boxes. Bottom shelf: spare cases.")
-        place_of = {i["Item ID"]: str(i.get("Location", "")).strip() for i in items}
-        current = [i["Item ID"] for i in items if place_of[i["Item ID"]].lower() == pick.lower()]
-        ordered = sorted(items, key=lambda i: (place_of[i["Item ID"]].lower() != pick.lower(),
-                                               bool(place_of[i["Item ID"]]), i["Item"].lower()))
+        loc_of = {i["Item ID"]: str(i.get("Location", "")).strip() for i in items}
+        current = [i["Item ID"] for i in items if loc_of[i["Item ID"]].lower() == pick.lower()]
+        ordered = sorted(items, key=lambda i: (loc_of[i["Item ID"]].lower() != pick.lower(),
+                                               bool(loc_of[i["Item ID"]]), i["Item"].lower()))
         st.markdown("**Supplies stored here**")
         st.caption("Tick the supplies kept in this place. Ticking one that is stored elsewhere moves it here; "
                    "unticking one leaves it with no location.")
         picks = st.data_editor(
-            pd.DataFrame([{"Here": place_of[i["Item ID"]].lower() == pick.lower(), "Item ID": i["Item ID"],
-                           "Item": i["Item"], "Now in": place_of[i["Item ID"]] or "No location"} for i in ordered]),
+            pd.DataFrame([{"Here": loc_of[i["Item ID"]].lower() == pick.lower(), "Item ID": i["Item ID"],
+                           "Item": i["Item"], "Now in": loc_of[i["Item ID"]] or "No location"} for i in ordered]),
             key=f"map_items_{pick}", hide_index=True, width="stretch", num_rows="fixed", height=280,
             disabled=["Item", "Now in"],
             column_config={"Here": st.column_config.CheckboxColumn("Here", width="small"), "Item ID": None,
                            "Item": st.column_config.TextColumn("Item", width="large")},
         )
         chosen = list(picks.loc[picks["Here"], "Item ID"])
-        on_map = st.toggle("Show on the map", value=d["x"] is not None, key=f"map_on_{pick}")
         x = y = None
-        if on_map:
-            c1, c2 = st.columns(2)
-            x = c1.slider("Across (left to right)", 0.0, 100.0, float(d["x"] if d["x"] is not None else 50.0), 0.5,
-                          key=f"map_x_{pick}")
-            y = c2.slider("Down (top to bottom)", 0.0, 100.0, float(d["y"] if d["y"] is not None else 50.0), 0.5,
-                          key=f"map_y_{pick}")
-            if uri:
-                preview_numbers = dict(numbers)
-                preview_numbers.setdefault(pick, "★")
-                st.markdown(map_html(uri, details if pick in numbers else details + [{**d, "x": x, "y": y}],
-                                     preview_numbers, stored, highlight=pick, moved=(x, y)),
-                            unsafe_allow_html=True)
+        if parent:
+            st.caption(f"Cabinets, drawers and shelves have no pin of their own: they are listed in the "
+                       f"**{parent}** card and found through its pin.")
+        else:
+            on_map = st.toggle("Show on the map", value=d["x"] is not None, key=f"map_on_{pick}")
+            if on_map:
+                c1, c2 = st.columns(2)
+                x = c1.slider("Across (left to right)", 0.0, 100.0, float(d["x"] if d["x"] is not None else 50.0),
+                              0.5, key=f"map_x_{pick}")
+                y = c2.slider("Down (top to bottom)", 0.0, 100.0, float(d["y"] if d["y"] is not None else 50.0),
+                              0.5, key=f"map_y_{pick}")
+                st.caption("Put the pin in a free corner of the box so the name on the plan stays readable.")
+                if uri:
+                    preview = places if pick in by_name else places + [{**d, "count": 0, "low": 0, "state": "empty"}]
+                    st.markdown(map_html(uri, preview, highlight=pick, moved=(x, y)), unsafe_allow_html=True)
         if st.button("Save location", type="primary", key="map_save", icon=":material/save:") and not needs_initials():
             try:
                 if not d.get("preset") and not d.get("saved"):
                     sheet.add_location(pick, user)
+                if parent:
+                    x, y = d["x"], d["y"]  # storage spots keep whatever is saved; they are not drawn
                 if (d["x"], d["y"]) != (x, y) or (d.get("note") or "") != note.strip():
                     sheet.update_location(pick, user, x, y, note)
                 for item_id in set(chosen) - set(current):
