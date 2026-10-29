@@ -30,7 +30,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 # Bumped whenever app.py starts relying on something new in this module.
-CORE_VERSION = 5
+CORE_VERSION = 6
 
 INVENTORY_TAB = "Inventory"
 LOG_TAB = "Change log"
@@ -49,119 +49,206 @@ LOCATION_HEADERS = ["Location", "Added by", "Added on", "Map X", "Map Y", "Note"
 # None means the place is not drawn on the map yet. Staff can move pins, add notes and add
 # places in the app; those changes are saved in the Locations tab and override these defaults.
 PRESET_PLACES = [
-    # cold storage room (recalibrated 2026-10-26 to the redrawn floor plan)
-    ("Liquid nitrogen tank", 21.0, 9.0),
-    ("-80 °C freezer #3", 34.0, 9.0),
-    ("4 °C fridge", 45.0, 10.0),
-    ("-80 °C freezer #4 (DNA)", 56.0, 9.0),
-    ("-80 °C freezer #5", 68.0, 9.0),
-    ("-20 °C freezer #1", 79.0, 9.0),
-    ("Cold storage supply cabinet", 91.0, 10.0),
-    ("storage supply shelf", 98.0, 10.0),
-    ("Cart #1", 74.5, 16.0),
-    ("Cart #2", 84.5, 16.0),
-    ("-80 °C freezer #1", 21.0, 43.0),
-    ("-80 °C freezer #2", 34.0, 43.0),
-    ("Freezer supplies table", 51.0, 43.0),
-    ("Ice machine", 68.0, 44.0),
-    ("Freezer box cabinet 1", 66.0, 43.0),
-    ("Freezer box cabinet 2", 75.0, 43.0),
-    # main lab
-    ("Delivery desk", 23.0, 55.0),
-    ("PPE station", 53.0, 57.0),
-    ("Lab bench #1", 69.0, 52.0),
-    ("Supply cabinet 1, upper", None, None),  # superseded by "Lab bench #1, supply cabinet 1"
+    # cold storage room 5147 (positions match lab_map.jpg drawn 2026-10-28)
+    ("Liquid nitrogen tank", 18.4, 11.0),
+    ("-80 °C freezer #3", 29.1, 11.0),
+    ("4 °C fridge", 38.3, 11.0),
+    ("-80 °C freezer #4 (DNA)", 47.7, 11.0),
+    ("-80 °C freezer #5", 56.3, 11.0),
+    ("-20 °C freezer #1", 65.2, 11.0),
+    ("Cold storage supply cabinet", 75.5, 11.0),
+    ("storage supply shelf", 87.9, 11.0),
+    ("Cart #1", 77.9, 20.0),
+    ("Cart #2", 85.3, 20.0),
+    ("-80 °C freezer #1", 22.8, 37.1),
+    ("-80 °C freezer #2", 31.4, 37.1),
+    ("Freezer supplies table", 44.1, 37.1),
+    ("Ice machine", 57.5, 37.1),
+    ("Sink #3", 71.2, 37.2),
+    ("Freezer box cabinet 1", None, None),
+    ("Freezer box cabinet 2", None, None),
+    # main lab 5149
+    ("Desk #1, delivery drop-off", 20.5, 46.8),
+    ("PPE station", 49.3, 46.4),
+    ("Lab bench #1", 70.0, 46.8),
+    ("Supply cabinet 1, upper", None, None),
     ("Supply cabinet 1, lower", None, None),
     ("Supply cabinet 2, upper", None, None),
     ("Supply cabinet 2, lower", None, None),
-    ("Lab bench #7, specimen prep", 53.0, 69.0),
-    ("Lab bench #6, extraction", 53.0, 77.0),
-    ("Sink #2", 29.0, 74.0),
-    ("Sink #3", 80.0, 74.0),
-    ("Lab desk #1", 90.0, 69.0),
-    ("Lab desk #2", 90.0, 73.0),
-    ("Lab bench #2, centrifuge", 16.0, 80.0),
-    ("Lab bench #3", 29.0, 93.0),
-    ("Supply cabinet 3, upper", None, None),  # superseded by "Lab bench #3, Kingfisher supply cabinet …"
+    ("Lab bench #7, specimen prep", 53.0, 65.2),
+    ("Lab bench #6, extraction", 53.0, 73.1),
+    ("Sink #1", 29.5, 66.5),
+    ("Sink #2", 74.5, 66.5),
+    ("Desk #4", 91.0, 64.7),
+    ("Desk #3", 91.0, 71.8),
+    ("Lab bench #2, centrifuge", 13.0, 69.5),
+    ("Lab bench #3, KingFisher", 19.8, 92.2),
+    ("Supply cabinet 3, upper", None, None),
     ("Supply cabinet 3, lower", None, None),
-    ("Lab bench #4", 50.0, 93.0),
-    ("Supply cabinet 4, upper", None, None),  # superseded by "Lab bench #4, supply cabinet …"
+    ("Desk #2", 42.0, 92.4),
+    ("Bench #4", 50.9, 92.3),
+    ("Supply cabinet 4, upper", None, None),
     ("Supply cabinet 4, lower", None, None),
-    ("BSC #1", 67.0, 93.0),
-    ("Chemical hood", 77.0, 93.0),
-    ("Flammables cabinet", None, None),  # not drawn on the redrawn floor plan
-    ("Lab bench #5, QC", 92.0, 91.0),
-    # sub-storage spots, clustered around their parent cabinet/bench pin above
-    ("Freezer box cabinet 1, top", 64.0, 41.5),
-    ("Freezer box cabinet 1, lower", 68.0, 41.5),
-    ("Freezer box cabinet 1, drawer 1", 64.0, 44.5),
-    ("Freezer box cabinet 1, drawer 2", 68.0, 44.5),
-    ("Freezer box cabinet 1, empty space", 66.0, 46.5),
-    ("Freezer box cabinet 2, top", 73.0, 41.5),
-    ("Freezer box cabinet 2, lower", 77.0, 41.5),
-    ("Freezer box cabinet 2, drawer 1", 73.0, 44.5),
-    ("Freezer box cabinet 2, drawer 2", 77.0, 44.5),
-    ("Freezer box cabinet 2, empty space", 75.0, 46.5),
-    ("Delivery desk, top shelf", 19.0, 53.0),
-    ("Delivery desk, drawer 1", 27.0, 53.0),
-    ("Delivery desk, drawer 2", 23.0, 58.0),
-    ("Lab bench #7, specimen prep, top shelf 1", 44.0, 68.0),
-    ("Lab bench #7, specimen prep, top shelf 2", 62.0, 68.0),
-    ("Lab bench #7, specimen prep, lower storage", 53.0, 70.5),
-    ("Lab bench #6, extraction, top shelf 1", 44.0, 76.0),
-    ("Lab bench #6, extraction, top shelf 2", 62.0, 76.0),
-    ("Lab bench #6, extraction, lower storage", 53.0, 78.5),
-    ("Lab bench #2, centrifuge, drawer 1", 13.0, 70.0),
-    ("Lab bench #2, centrifuge, drawer 2", 19.0, 70.0),
-    ("Lab bench #2, centrifuge, lower storage", 16.0, 73.0),
-    # bench 1-5 storage: supply cabinets and drawers, clustered around each bench's pin above
-    ("Lab bench #1, supply cabinet 1", 63.0, 48.5),
-    ("Lab bench #1, supply cabinet 2", 74.0, 48.5),
-    ("Lab bench #1, supply cabinet 3", 63.0, 55.0),
-    ("Lab bench #1, supply cabinet 4", 74.0, 55.0),
-    ("Lab bench #1, drawer 1", 60.0, 57.5),
-    ("Lab bench #1, drawer 2", 67.0, 57.5),
-    ("Lab bench #1, drawer 3", 74.0, 57.5),
-    ("Lab bench #1, drawer 4", 81.0, 57.5),
-    ("Lab bench #1, supply cabinet 5", 81.0, 48.5),
-    ("Lab bench #2, centrifuge, drawer 5", 13.0, 76.0),
-    ("Lab bench #2, centrifuge, drawer 6", 19.0, 76.0),
-    ("Lab bench #2, centrifuge, drawer 7", 16.0, 85.0),
-    ("Lab bench #2, centrifuge, supply cabinet 9", 19.0, 82.0),
-    ("Lab bench #2, centrifuge, lower storage part", 13.0, 88.0),
-    ("Lab bench #3, Kingfisher supply cabinet 1", 24.0, 91.5),
-    ("Lab bench #3, Kingfisher supply cabinet 2", 34.0, 91.5),
-    ("Lab bench #3, Kingfisher drawer 1", 24.0, 95.0),
-    ("Lab bench #3, Kingfisher drawer 2", 34.0, 95.0),
-    ("Lab bench #4, supply cabinet 6", 56.0, 97.0),
-    ("Lab bench #4, supply cabinet 7", 45.0, 91.7),
-    ("Lab bench #4, supply cabinet 8", 56.0, 91.7),
-    ("Lab bench #4, supply cabinet 9", 66.0, 94.3),
-    ("Lab bench #4, drawer 5", 40.0, 91.7),
-    ("Lab bench #4, drawer 6", 40.0, 97.0),
-    ("Lab bench #4, drawer 7", 61.0, 91.7),
-    ("Lab bench #4, drawer 8", 61.0, 97.0),
-    ("Lab bench #5, QC, supply cabinet 10", 91.0, 92.0),
-    ("Lab bench #5, QC, supply cabinet 11", 91.0, 97.0),
+    ("BSC #1", 63.0, 92.0),
+    ("Chemical hood", 73.2, 92.0),
+    ("Flammables cabinet", 80.0, 93.0),
+    ("Bench #5", 87.6, 92.3),
+    # room 5147 storage, clustered around its pin above
+    ("Sink #3, supply cabinet 17", 65.0, 34.3),
+    ("Sink #3, supply cabinet 18", 69.0, 34.3),
+    ("Sink #3, supply cabinet 19", 73.5, 34.3),
+    ("Sink #3, supply cabinet 20", 77.5, 34.3),
+    ("Sink #3, drawer 1", 65.0, 40.2),
+    ("Sink #3, drawer 2", 69.0, 40.2),
+    ("Sink #3, drawer 3", 73.5, 40.2),
+    ("Sink #3, drawer 4", 77.5, 40.2),
+    ("Freezer box cabinet 1, top", None, None),
+    ("Freezer box cabinet 1, lower", None, None),
+    ("Freezer box cabinet 1, drawer 1", None, None),
+    ("Freezer box cabinet 1, drawer 2", None, None),
+    ("Freezer box cabinet 1, empty space", None, None),
+    ("Freezer box cabinet 2, top", None, None),
+    ("Freezer box cabinet 2, lower", None, None),
+    ("Freezer box cabinet 2, drawer 1", None, None),
+    ("Freezer box cabinet 2, drawer 2", None, None),
+    ("Freezer box cabinet 2, empty space", None, None),
+    # room 5149 storage (supply cabinets numbered 1-16 across the room, drawers per bench)
+    ("Desk #1, drawer 1 (shipping supplies)", 25.0, 48.8),
+    ("Desk #1, drawer 2 (tool box)", 28.5, 48.8),
+    ("Lab bench #1, supply cabinet 1", 59.8, 44.4),
+    ("Lab bench #1, supply cabinet 2", 62.8, 44.4),
+    ("Lab bench #1, supply cabinet 3", 77.0, 44.4),
+    ("Lab bench #1, supply cabinet 4", 80.0, 44.4),
+    ("Lab bench #1, supply cabinet 5", 66.0, 49.2),
+    ("Lab bench #1, drawer 1", 59.8, 49.2),
+    ("Lab bench #1, drawer 2", 62.8, 49.2),
+    ("Lab bench #1, drawer 3", 77.0, 49.2),
+    ("Lab bench #1, drawer 4", 80.0, 49.2),
+    ("Lab bench #2, centrifuge, drawer 1", 13.0, 59.5),
+    ("Lab bench #2, centrifuge, drawer 2", 13.0, 62.5),
+    ("Lab bench #2, centrifuge, drawer 3", 13.0, 65.5),
+    ("Lab bench #2, centrifuge, supply cabinet 6", 13.0, 74.0),
+    ("Lab bench #2, centrifuge, lower storage part", 13.0, 78.5),
+    ("Lab bench #3, KingFisher, supply cabinet 7", 23.5, 89.2),
+    ("Lab bench #3, KingFisher, supply cabinet 8", 27.0, 89.2),
+    ("Lab bench #3, KingFisher, drawer 1", 13.5, 95.5),
+    ("Lab bench #3, KingFisher, drawer 2", 17.5, 95.5),
+    ("Lab bench #3, KingFisher, drawer 3", 21.5, 95.5),
+    ("Desk #2, upper shelf", 37.8, 89.4),
+    ("Desk #2, lower shelf", 37.8, 95.4),
+    ("Bench #4, supply cabinet 9", 46.3, 89.0),
+    ("Bench #4, supply cabinet 10", 49.3, 89.0),
+    ("Bench #4, supply cabinet 11", 52.3, 89.0),
+    ("Bench #4, supply cabinet 12", 55.3, 89.0),
+    ("Bench #4, drawer 1", 46.3, 95.6),
+    ("Bench #4, drawer 2", 50.9, 95.6),
+    ("Bench #4, drawer 3", 55.5, 95.6),
+    ("Bench #5, supply cabinet 13", 84.0, 89.0),
+    ("Bench #5, supply cabinet 14", 91.2, 89.0),
+    ("Bench #5, drawer 1", 84.0, 95.6),
+    ("Bench #5, drawer 2", 91.2, 95.6),
+    ("Lab bench #6, extraction, top shelf", 38.5, 71.4),
+    ("Lab bench #6, extraction, lower shelf", 42.0, 71.4),
+    ("Lab bench #6, extraction, supply cabinet 15", 45.5, 71.4),
+    ("Lab bench #6, extraction, lower storage 1", 38.5, 74.8),
+    ("Lab bench #6, extraction, lower storage 2", 42.0, 74.8),
+    ("Lab bench #6, extraction, drawer 1", 60.5, 71.4),
+    ("Lab bench #6, extraction, drawer 2", 64.0, 71.4),
+    ("Lab bench #6, extraction, drawer 3", 67.5, 71.4),
+    ("Lab bench #6, extraction, drawer 4", 60.5, 74.8),
+    ("Lab bench #6, extraction, drawer 5", 64.0, 74.8),
+    ("Lab bench #7, specimen prep, top shelf", 38.5, 63.6),
+    ("Lab bench #7, specimen prep, lower shelf", 42.0, 63.6),
+    ("Lab bench #7, specimen prep, supply cabinet 16", 45.5, 63.6),
+    ("Lab bench #7, specimen prep, lower storage 1", 38.5, 67.0),
+    ("Lab bench #7, specimen prep, lower storage 2", 42.0, 67.0),
+    ("Lab bench #7, specimen prep, drawer 1", 60.5, 63.6),
+    ("Lab bench #7, specimen prep, drawer 2", 64.0, 63.6),
+    ("Lab bench #7, specimen prep, drawer 3", 67.5, 63.6),
+    ("Lab bench #7, specimen prep, drawer 4", 60.5, 67.0),
+    ("Lab bench #7, specimen prep, drawer 5", 64.0, 67.0),
+    ("Sink #1, storage cabinet", 31.5, 73.0),
+    ("Sink #2, storage cabinet", 74.5, 73.0),
 ]
+# Places renamed or removed on the relabeled floor plan (2026-10-28): old name -> new place. Items and
+# Locations-tab rows still saved under an old name are moved over by migrate_renamed_places(). Storage spots
+# that are no longer on the outline point to their bench or desk, so nothing stored there is lost.
+RENAMED_PLACES = {
+    "Lab desk #1": "Desk #4",
+    "Lab desk #2": "Desk #3",
+    "Lab bench #4": "Bench #4",
+    "Lab bench #5, QC": "Bench #5",
+    "Delivery desk": "Desk #1, delivery drop-off",
+    "Lab bench #3": "Lab bench #3, KingFisher",
+    "Delivery desk, drawer 1": "Desk #1, drawer 1 (shipping supplies)",
+    "Delivery desk, drawer 2": "Desk #1, drawer 2 (tool box)",
+    "Delivery desk, top shelf": "Desk #1, delivery drop-off",
+    "Lab bench #2, centrifuge, supply cabinet 9": "Lab bench #2, centrifuge, supply cabinet 6",
+    "Lab bench #2, centrifuge, lower storage": "Lab bench #2, centrifuge, lower storage part",
+    "Lab bench #2, centrifuge, drawer 5": "Lab bench #2, centrifuge",
+    "Lab bench #2, centrifuge, drawer 6": "Lab bench #2, centrifuge",
+    "Lab bench #2, centrifuge, drawer 7": "Lab bench #2, centrifuge",
+    "Lab bench #3, Kingfisher supply cabinet 1": "Lab bench #3, KingFisher, supply cabinet 7",
+    "Lab bench #3, Kingfisher supply cabinet 2": "Lab bench #3, KingFisher, supply cabinet 8",
+    "Lab bench #3, Kingfisher drawer 1": "Lab bench #3, KingFisher, drawer 1",
+    "Lab bench #3, Kingfisher drawer 2": "Lab bench #3, KingFisher, drawer 2",
+    "Lab bench #4, supply cabinet 7": "Desk #2",
+    "Desk #2, supply cabinet 7": "Desk #2",
+    "Lab bench #4, drawer 5": "Desk #2",
+    "Desk #2, drawer 5": "Desk #2",
+    "Lab bench #4, drawer 6": "Desk #2",
+    "Desk #2, drawer 6": "Desk #2",
+    "Lab bench #4, supply cabinet 6": "Bench #4",
+    "Bench #4, supply cabinet 6": "Bench #4",
+    "Lab bench #4, supply cabinet 8": "Bench #4",
+    "Bench #4, supply cabinet 8": "Bench #4",
+    "Lab bench #4, supply cabinet 9": "Bench #4, supply cabinet 9",
+    "Lab bench #4, drawer 7": "Bench #4",
+    "Bench #4, drawer 7": "Bench #4",
+    "Lab bench #4, drawer 8": "Bench #4",
+    "Bench #4, drawer 8": "Bench #4",
+    "Lab bench #5, QC, supply cabinet 10": "Bench #5, supply cabinet 13",
+    "Lab bench #5, QC, supply cabinet 11": "Bench #5, supply cabinet 14",
+    "Bench #5, supply cabinet 10": "Bench #5, supply cabinet 13",
+    "Bench #5, supply cabinet 11": "Bench #5, supply cabinet 14",
+    "Lab bench #6, extraction, top shelf 1": "Lab bench #6, extraction, top shelf",
+    "Lab bench #6, extraction, top shelf 2": "Lab bench #6, extraction, top shelf",
+    "Lab bench #6, extraction, lower storage": "Lab bench #6, extraction, lower storage 1",
+    "Lab bench #7, specimen prep, top shelf 1": "Lab bench #7, specimen prep, top shelf",
+    "Lab bench #7, specimen prep, top shelf 2": "Lab bench #7, specimen prep, top shelf",
+    "Lab bench #7, specimen prep, lower storage": "Lab bench #7, specimen prep, lower storage 1",
+    # sink numbers on the 2026-10-28 drawing: the cold-room sink is Sink #3 (its cabinets are 17-20)
+    "Sink #1, supply cabinet 17": "Sink #3, supply cabinet 17",
+    "Sink #1, supply cabinet 18": "Sink #3, supply cabinet 18",
+    "Sink #1, supply cabinet 19": "Sink #3, supply cabinet 19",
+    "Sink #1, supply cabinet 20": "Sink #3, supply cabinet 20",
+    "Sink #1, drawer 1": "Sink #3, drawer 1",
+    "Sink #1, drawer 2": "Sink #3, drawer 2",
+    "Sink #1, drawer 3": "Sink #3, drawer 3",
+    "Sink #1, drawer 4": "Sink #3, drawer 4",
+    "Sink #3, storage cabinet": "Sink #2, storage cabinet",
+}
+_RENAMED_LOWER = {old.lower(): new for old, new in RENAMED_PLACES.items()}
 # Starting notes for places whose position on the plan is a guess, or that aren't on the current floor plan.
 PRESET_NOTES = {
-    "Flammables cabinet": "Not on the redrawn floor plan. Set its position under Edit a location if you want it "
-                          "on the map again.",
+    "Flammables cabinet": "Placed at the cabinet with the hazard sign next to the chemical hood. Move it "
+                          "under Edit a location if that is not the flammables cabinet.",
+    "Freezer box cabinet 1": "Not on the floor plan; the Sink #3 supply cabinets 17-20 are in this spot.",
+    "Freezer box cabinet 2": "Not on the floor plan; the Sink #3 supply cabinets 17-20 are in this spot.",
+    "Sink #1": "Eyewash station.",
     "Supply cabinet 1, upper": "Replaced on the redrawn floor plan by \"Lab bench #1, supply cabinet 1\".",
     "Supply cabinet 1, lower": "Replaced on the redrawn floor plan by \"Lab bench #1, supply cabinet 3\".",
     "Supply cabinet 2, upper": "Replaced on the redrawn floor plan by \"Lab bench #1, supply cabinet 2\".",
     "Supply cabinet 2, lower": "Replaced on the redrawn floor plan by \"Lab bench #1, supply cabinet 4\".",
-    "Supply cabinet 3, upper": "Replaced on the redrawn floor plan by \"Lab bench #3, Kingfisher supply cabinet 1\".",
-    "Supply cabinet 3, lower": "Replaced on the redrawn floor plan by \"Lab bench #3, Kingfisher supply cabinet 2\".",
-    "Supply cabinet 4, upper": "Replaced on the redrawn floor plan by \"Lab bench #4, supply "
-                              "cabinet 7\".",
-    "Supply cabinet 4, lower": "Replaced on the redrawn floor plan by \"Lab bench #4, supply "
-                              "cabinet 8\".",
+    "Supply cabinet 3, upper": "Replaced on the redrawn floor plan by \"Lab bench #3, KingFisher, supply cabinet 7\".",
+    "Supply cabinet 3, lower": "Replaced on the redrawn floor plan by \"Lab bench #3, KingFisher, supply cabinet 8\".",
+    "Supply cabinet 4, upper": "Replaced on the redrawn floor plan by the Bench #4 supply cabinets (9-12).",
+    "Supply cabinet 4, lower": "Replaced on the redrawn floor plan by the Bench #4 supply cabinets (9-12).",
     "Freezer box cabinet 1, empty space": "Open space in the cabinet, not yet assigned to an item.",
     "Freezer box cabinet 2, empty space": "Open space in the cabinet, not yet assigned to an item.",
 }
 PRESET_LOCATIONS = [name for name, _, _ in PRESET_PLACES]
+_PRESET_XY = {name.lower(): (x, y) for name, x, y in PRESET_PLACES}
 NUMERIC_FIELDS = {"Per sample", "Per run", "Target", "On hand", "Reorder at"}
 EDITABLE_FIELDS = [h for h in HEADERS if h not in ("Item ID", "Last checked", "Checked by")]
 STATUS_OPTIONS = ["In stock", "Low", "Ordered", "Out of stock"]
@@ -419,10 +506,97 @@ class InventorySheet:
                                "saved": False, "preset": True})
             seen.add(name.lower())
         for key, row in saved.items():
-            if key not in seen:
+            if key not in seen and key not in _RENAMED_LOWER:  # old names are moved by migrate_renamed_places()
                 result.append({**row, "preset": False})
                 seen.add(key)
         return result
+
+    def renamed_places_in_use(self, items: list[dict] | None = None) -> dict:
+        """Counts of items and Locations-tab rows still saved under a renamed place's old name."""
+        items = self.items() if items is None else items
+        n_items = sum(1 for i in items if str(i.get("Location", "")).strip().lower() in _RENAMED_LOWER)
+        n_rows = sum(1 for r in self._saved_places() if r[0].strip().lower() in _RENAMED_LOWER)
+        return {"items": n_items, "places": n_rows}
+
+    def migrate_renamed_places(self, user: str) -> dict:
+        """Move items and saved notes from renamed places to their new names (each change is logged).
+
+        Saved map positions under an old name are dropped, so the pin uses the new floor plan position.
+        """
+        if not user.strip():
+            raise InventoryError("Enter your initials first.")
+        who = user.strip().upper()
+        moved_items = 0
+        for item in self.items():
+            new = _RENAMED_LOWER.get(str(item.get("Location", "")).strip().lower())
+            if new:
+                self.update_item(item["Item ID"], {"Location": new}, who, reason="place renamed")
+                moved_items += 1
+        values = self.places.get_all_values()
+        rows = {}  # lower-case name -> [row number, note] for rows that keep their name
+        for row_number, row in enumerate(values[1:], start=2):
+            row = (row + [""] * len(LOCATION_HEADERS))[: len(LOCATION_HEADERS)]
+            if row[0].strip() and row[0].strip().lower() not in _RENAMED_LOWER:
+                rows.setdefault(row[0].strip().lower(), [row_number, row[5].strip()])
+        moved_places = 0
+        for row_number, row in enumerate(values[1:], start=2):
+            row = (row + [""] * len(LOCATION_HEADERS))[: len(LOCATION_HEADERS)]
+            old = row[0].strip()
+            new = _RENAMED_LOWER.get(old.lower())
+            if not new:
+                continue
+            note = row[5].strip()
+            kept = rows.get(new.lower())
+            if kept:  # the new name already has a row: merge the note into it and blank this one
+                if note and note not in kept[1]:
+                    kept[1] = f"{kept[1]}; {note}" if kept[1] else note
+                    self.places.update(values=[[kept[1]]], range_name=f"F{kept[0]}", value_input_option="USER_ENTERED")
+                self.places.update(values=[[""] * len(LOCATION_HEADERS)],
+                                   range_name=f"A{row_number}:{column_letter(len(LOCATION_HEADERS))}{row_number}",
+                                   value_input_option="USER_ENTERED")
+            else:  # rename the row in place; the pin goes to the new name's floor plan position
+                x, y = _PRESET_XY.get(new.lower(), (None, None))
+                self.places.update(values=[[new]], range_name=f"A{row_number}", value_input_option="USER_ENTERED")
+                self.places.update(values=[["" if x is None else x, "" if y is None else y]],
+                                   range_name=f"D{row_number}:E{row_number}", value_input_option="USER_ENTERED")
+                rows[new.lower()] = [row_number, note]
+            self._log(who, "-", old, "Location renamed", old, new)
+            moved_places += 1
+        return {"items": moved_items, "places": moved_places}
+
+    def saved_pin_positions(self) -> list[str]:
+        """Preset places whose saved pin position (Locations tab) differs from the floor plan default."""
+        presets = {name.lower(): (name, x, y) for name, x, y in PRESET_PLACES}
+        return [presets[r[0].strip().lower()][0] for r in self._saved_places()
+                if r[0].strip().lower() in presets
+                and (self._coord(r[3]), self._coord(r[4])) != presets[r[0].strip().lower()][1:]]
+
+    def reset_preset_pins(self, user: str) -> int:
+        """Put every preset place's pin back on its floor plan position (also re-shows hidden ones).
+
+        Notes are kept. Returns how many pins were changed.
+        """
+        if not user.strip():
+            raise InventoryError("Enter your initials first.")
+        who = user.strip().upper()
+        presets = {name.lower(): (name, x, y) for name, x, y in PRESET_PLACES}
+        count = 0
+        for row_number, row in enumerate(self.places.get_all_values()[1:], start=2):
+            row = (row + [""] * len(LOCATION_HEADERS))[: len(LOCATION_HEADERS)]
+            key = row[0].strip().lower()
+            if key not in presets:
+                continue
+            name, x, y = presets[key]
+            want = ["" if x is None else x, "" if y is None else y]
+            if (self._coord(row[3]), self._coord(row[4])) == (x, y):
+                continue
+            self.places.update(values=[want], range_name=f"D{row_number}:E{row_number}",
+                               value_input_option="USER_ENTERED")
+            where = "not on map" if x is None else f"{x}, {y}"
+            old = "not on map" if not (row[3].strip() or row[4].strip()) else f"{row[3]}, {row[4]}"
+            self._log(who, "-", name, "Map position", old, f"{where} (floor plan default)")
+            count += 1
+        return count
 
     def locations(self) -> list[str]:
         """Location names: presets first, then the ones staff added."""

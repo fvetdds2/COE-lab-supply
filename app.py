@@ -54,14 +54,14 @@ SUGGESTED_PLACES = {
     "KingFisher Apex 96 KF microplates, barcoded": "Lab bench #1, supply cabinet 2",
     "KingFisher 96 deep-well tip combs, barcoded": "Lab bench #1, supply cabinet 2",
     "MicroAmp Clear Adhesive Film": "Lab bench #1, supply cabinet 2",
-    "Filter tips, 20 uL": "Lab bench #3, Kingfisher supply cabinet 1",
-    "Filter tips, 200 uL": "Lab bench #3, Kingfisher supply cabinet 1",
-    "Filter tips, 300 uL": "Lab bench #3, Kingfisher supply cabinet 1",
-    "Microcentrifuge tubes, 1.5 mL": "Lab bench #3, Kingfisher supply cabinet 1",
-    "Paraffin film": "Lab bench #3, Kingfisher supply cabinet 1",
-    "Filter tips, 1,000 or 1,250 uL": "Lab bench #3, Kingfisher supply cabinet 2",
-    "Serological pipettes, 10 and 25 mL": "Lab bench #3, Kingfisher supply cabinet 2",
-    "Biohazard bags and tip waste bins": "Lab bench #4, supply cabinet 8",
+    "Filter tips, 20 uL": "Lab bench #3, KingFisher, supply cabinet 7",
+    "Filter tips, 200 uL": "Lab bench #3, KingFisher, supply cabinet 7",
+    "Filter tips, 300 uL": "Lab bench #3, KingFisher, supply cabinet 7",
+    "Microcentrifuge tubes, 1.5 mL": "Lab bench #3, KingFisher, supply cabinet 7",
+    "Paraffin film": "Lab bench #3, KingFisher, supply cabinet 7",
+    "Filter tips, 1,000 or 1,250 uL": "Lab bench #3, KingFisher, supply cabinet 8",
+    "Serological pipettes, 10 and 25 mL": "Lab bench #3, KingFisher, supply cabinet 8",
+    "Biohazard bags and tip waste bins": "Bench #4, supply cabinet 9",
     "Nitrile gloves": "PPE station",
     "Ethanol, 96-100%, molecular biology grade": "Flammables cabinet",
     "2D-barcoded tubes": "Freezer supplies table",
@@ -98,7 +98,7 @@ DEMO_COUNTS = {  # example counts for demo mode only
 
 # --------------------------------------------------------------------------- connection
 
-REQUIRED_CORE = 5  # the inventory_core.py version this app.py needs
+REQUIRED_CORE = 6  # the inventory_core.py version this app.py needs
 
 
 def check_core_version() -> None:
@@ -203,9 +203,16 @@ def load_locations(_sheet: ic.InventorySheet) -> list[str]:
     return _sheet.locations()
 
 
+@st.cache_data(ttl=REFRESH_SECONDS, show_spinner=False)
+def load_map_checks(_sheet: ic.InventorySheet) -> tuple[dict, list[str]]:
+    """Old place names still in use, and built-in pins moved by hand (re-read every REFRESH_SECONDS)."""
+    return _sheet.renamed_places_in_use(), _sheet.saved_pin_positions()
+
+
 def refresh() -> None:
     load_items.clear()  # every session re-reads the sheet after a write
     load_locations.clear()
+    load_map_checks.clear()
 
 
 # --------------------------------------------------------------------------- helpers
@@ -993,6 +1000,21 @@ def map_view(items: list[dict]) -> None:
         if d["x"] is not None and d["y"] is not None:
             numbers[d["name"]] = len(numbers) + 1
 
+    renamed, moved_pins = ((sheet.renamed_places_in_use(items), sheet.saved_pin_positions()) if demo
+                           else load_map_checks(sheet))
+    if renamed["items"] or renamed["places"]:
+        r1, r2 = st.columns([3, 1.4], vertical_alignment="center")
+        r1.info(f"Storage places were renamed on the new floor plan (e.g. Delivery desk → Desk #1, "
+                f"Lab bench #5, QC → Bench #5, and the supply cabinets are now numbered 1-20). {renamed['items']} item{'s' if renamed['items'] != 1 else ''} and "
+                f"{renamed['places']} saved place{'s' if renamed['places'] != 1 else ''} still use an old name.")
+        if r2.button("Update to the new names", icon=":material/drive_file_rename_outline:", width="stretch",
+                     key="map_rename") and not needs_initials():
+            try:
+                done = sheet.migrate_renamed_places(user)
+                flash(f"Moved {done['items']} item{'s' if done['items'] != 1 else ''} to the new place names ({user}).")
+            except ic.InventoryError as exc:
+                st.error(str(exc))
+
     missing = [i for i in items if not str(i.get("Location", "")).strip() and i["Item"] in SUGGESTED_PLACES]
     if missing:
         m1, m2 = st.columns([3, 1.4], vertical_alignment="center")
@@ -1072,6 +1094,18 @@ def map_view(items: list[dict]) -> None:
                 flash(f"Saved {pick} ({user}).")
             except ic.InventoryError as exc:
                 st.error(str(exc))
+        if moved_pins:
+            st.divider()
+            st.caption(f"{len(moved_pins)} built-in place{'s have' if len(moved_pins) != 1 else ' has'} a pin moved or "
+                       "hidden by hand. If pins no longer sit on the right spot after a new floor plan, put them back "
+                       "on their floor plan positions (notes and stored supplies are kept).")
+            if st.button("Reset built-in pins to the floor plan", icon=":material/restart_alt:",
+                         key="map_reset_pins") and not needs_initials():
+                try:
+                    n = sheet.reset_preset_pins(user)
+                    flash(f"Reset {n} pin{'s' if n != 1 else ''} to the floor plan ({user}).")
+                except ic.InventoryError as exc:
+                    st.error(str(exc))
         st.divider()
         a1, a2 = st.columns([3, 1], vertical_alignment="bottom")
         a1.text_input("Add a new location", key="map_new_location", placeholder="e.g. Cold room, shelf 2",
