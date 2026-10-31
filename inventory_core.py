@@ -87,10 +87,12 @@ PRESET_PLACES = [
     ("Lab bench #3, KingFisher", 17.0, 91.0),
     ("Supply cabinet 3, upper", None, None),
     ("Supply cabinet 3, lower", None, None),
+    ("Cart A", 29.0, 91.0),
     ("Desk #2", 37.0, 91.0),
     ("Bench #4", 46.0, 91.0),
     ("Supply cabinet 4, upper", None, None),
     ("Supply cabinet 4, lower", None, None),
+    ("Cart B", 65.0, 91.0),
     ("BSC #1", 67.0, 91.0),
     ("Chemical hood", 79.0, 91.0),
     ("Flammables cabinet", 79.0, 87.0),
@@ -274,7 +276,8 @@ ROOMS = {
     "Room 5149 · Main lab": [
         "Desk #1, delivery drop-off", "PPE station", "Lab bench #1", "Lab bench #7, specimen prep",
         "Lab bench #6, extraction", "Sink #1", "Sink #2", "Desk #4", "Desk #3", "Lab bench #2, centrifuge",
-        "Lab bench #3, KingFisher", "Desk #2", "Bench #4", "BSC #1", "Chemical hood", "Flammables cabinet", "Bench #5",
+        "Lab bench #3, KingFisher", "Cart A", "Desk #2", "Bench #4", "Cart B", "BSC #1", "Chemical hood",
+        "Flammables cabinet", "Bench #5",
     ],
 }
 ROOM_OF = {name.lower(): room for room, names in ROOMS.items() for name in names}
