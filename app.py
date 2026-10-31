@@ -1127,7 +1127,7 @@ def map_view(items: list[dict]) -> None:
                     + "<span>The number is how many supplies are kept there. Tap a pin to see which cabinet "
                       "or drawer.</span></div>", unsafe_allow_html=True)
     else:
-        st.info("The map picture is missing. Put lab_map.jpg in the same folder as app.py.")
+        st.info("The map picture is missing. Put lab_map.png in the same folder as app.py.")
 
     unplaced = [r for r in rows if not r.location]
     shown = st.segmented_control("Show", ["Places with supplies", "All places and empty spots"],

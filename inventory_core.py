@@ -49,7 +49,7 @@ LOCATION_HEADERS = ["Location", "Added by", "Added on", "Map X", "Map Y", "Note"
 # None means the place is not drawn on the map yet. Staff can move pins, add notes and add
 # places in the app; those changes are saved in the Locations tab and override these defaults.
 PRESET_PLACES = [
-    # cold storage room 5147. Pins mark main places only (a badge in a free corner of each box on lab_map.jpg,
+    # cold storage room 5147. Pins mark main places only (a badge in a free corner of each box on lab_map.png,
     # in % across and down). Cabinets, drawers and shelves are listed in their place's card instead of
     # getting their own pin, so the map stays readable; see parent_place().
     ("Liquid nitrogen tank", 17.0, 10.0),
