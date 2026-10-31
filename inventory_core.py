@@ -65,7 +65,7 @@ PRESET_PLACES = [
     ("-80 °C freezer #1", 28.0, 35.0),
     ("-80 °C freezer #2", 37.0, 35.0),
     ("Freezer supplies table", 51.0, 35.0),
-    ("Ice machine", 65.0, 35.0),
+    ("Ice machine", 62.0, 35.0),
     ("Sink #3", 77.0, 35.0),
     ("Freezer box cabinet 1", None, None),
     ("Freezer box cabinet 2", None, None),

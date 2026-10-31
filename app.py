@@ -73,7 +73,7 @@ SUGGESTED_PLACES = {
     "Class 9 labels and UN1845 dry ice markings": "storage supply shelf",
 }
 DEMO_LOCATIONS = {k: v for k, v in SUGGESTED_PLACES.items() if k != "Nitrile gloves"}  # demo only
-MAP_FILE = Path(__file__).with_name("lab_map.jpg")  # the lab floor plan shown on the Map page
+MAP_FILE = Path(__file__).with_name("lab_map.png")  # the lab floor plan shown on the Map page
 DEMO_COUNTS = {  # example counts for demo mode only
     "MagMAX DNA Multi-Sample Ultra 2.0 Kit": 8,
     "KingFisher Apex 96 deep-well plates, barcoded": 200,
@@ -950,7 +950,7 @@ def order_view(items: list[dict]) -> None:
 # ---- Lab map
 @st.cache_data(show_spinner=False)
 def _map_uri(_modified: float) -> str:
-    return "data:image/jpeg;base64," + base64.b64encode(MAP_FILE.read_bytes()).decode()
+    return "data:image/png;base64," + base64.b64encode(MAP_FILE.read_bytes()).decode()
 
 
 def map_image() -> str | None:
