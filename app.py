@@ -965,24 +965,21 @@ def map_image() -> str | None:
     return _map_uri(MAP_FILE.stat().st_mtime) if MAP_FILE.exists() else None
 
 
-MANUALS_DIR = Path(__file__).with_name("manuals")  # instrument instruction PDFs, one per place
-
-
-@st.cache_data(show_spinner=False)
-def _manual_uri(file_name: str, _modified: float) -> str:
-    data = (MANUALS_DIR / file_name).read_bytes()
-    return "data:application/pdf;base64," + base64.b64encode(data).decode()
+# Instrument manuals are served as real static files (not embedded as data: URLs, which Chrome
+# and Edge block from opening in a new tab). This needs Streamlit's static file server turned on:
+# in .streamlit/config.toml, add
+#   [server]
+#   enableStaticServing = true
+# and the PDFs must live in a folder named exactly "static/manuals" next to app.py (Streamlit
+# only serves files placed under a top-level "static" folder).
+MANUALS_DIR = Path(__file__).with_name("static") / "manuals"
 
 
 def manual_link(file_name: str) -> str:
     """A "View instructions" link for a place's manual, or "" if the PDF isn't on disk."""
-    if not file_name:
+    if not file_name or not (MANUALS_DIR / file_name).exists():
         return ""
-    path = MANUALS_DIR / file_name
-    if not path.exists():
-        return ""
-    uri = _manual_uri(file_name, path.stat().st_mtime)
-    return (f'<a class="manual-link" href="{uri}" target="_blank" rel="noopener">'
+    return (f'<a class="manual-link" href="app/static/manuals/{file_name}" target="_blank" rel="noopener">'
             f'{PDF_ICON}View instructions</a>')
 
 
