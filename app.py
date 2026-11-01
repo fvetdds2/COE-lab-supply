@@ -427,6 +427,9 @@ a.mpin:hover { transform: translate(-50%, -50%) scale(1.2); z-index: 3; }
 .loc-count { color: var(--muted); font-weight: 400; font-size: 15px; margin-left: 4px; }
 .loc-note { font-size: 15px; color: var(--ink); background: #f6f7f9; border-radius: 8px; padding: 6px 10px;
             margin-top: 10px; white-space: pre-wrap; }
+.manual-link { display: inline-flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 600;
+               color: var(--magenta); margin-top: 10px; text-decoration: none; }
+.manual-link:hover { text-decoration: underline; }
 .loc-items { list-style: none; margin: 10px 0 0; padding: 0; }
 .loc-items li { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 15px;
                 padding: 6px 0; border-top: 1px solid var(--line); }
@@ -552,6 +555,11 @@ PIN = ('<svg class="pin" viewBox="0 0 24 24" aria-hidden="true"><path fill="curr
        'd="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5'
        'a2.5 2.5 0 0 1 0 5z"/></svg>')
 NO_LOCATION = "No location set"
+PDF_ICON = ('<svg viewBox="0 0 24 24" aria-hidden="true" width="15" height="15"><path fill="currentColor" '
+            'd="M6 2a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6H6zm7 1.5L18.5 9H13V3.5zM8 13h2.2'
+            'c1 0 1.8.8 1.8 1.8s-.8 1.7-1.8 1.7H9v1.5H8V13zm1 1v1.3h1.1c.4 0 .7-.3.7-.65S10.5 14 10.1 14H9zm4'
+            ' 0h2v1h-1.3v.7H15v1h-1.3V18H12v-4zm5 0h-1.3v3H17c.8 0 1.3-.5 1.3-1.5S17.8 14 17 14zm-.3 1v1h.3'
+            'c.2 0 .3-.15.3-.5s-.1-.5-.3-.5h-.3z"/></svg>')
 
 
 def groups_html(rows: list[Stock], group_order: list[str], by: str = "category") -> str:
@@ -957,6 +965,27 @@ def map_image() -> str | None:
     return _map_uri(MAP_FILE.stat().st_mtime) if MAP_FILE.exists() else None
 
 
+MANUALS_DIR = Path(__file__).with_name("manuals")  # instrument instruction PDFs, one per place
+
+
+@st.cache_data(show_spinner=False)
+def _manual_uri(file_name: str, _modified: float) -> str:
+    data = (MANUALS_DIR / file_name).read_bytes()
+    return "data:application/pdf;base64," + base64.b64encode(data).decode()
+
+
+def manual_link(file_name: str) -> str:
+    """A "View instructions" link for a place's manual, or "" if the PDF isn't on disk."""
+    if not file_name:
+        return ""
+    path = MANUALS_DIR / file_name
+    if not path.exists():
+        return ""
+    uri = _manual_uri(file_name, path.stat().st_mtime)
+    return (f'<a class="manual-link" href="{uri}" target="_blank" rel="noopener">'
+            f'{PDF_ICON}View instructions</a>')
+
+
 PIN_KEY = [("ok", METER, "Has supplies"), ("low", "#b45309", "Something low"), ("out", "#b42318", "Something out"),
            ("empty", "#9aa3af", "Nothing stored yet")]
 
@@ -1016,6 +1045,7 @@ def place_card(p: dict, show_empty_spots: bool) -> str:
     badge = f'<span class="mpin badge {p["state"]}">{p["count"] or ""}</span>'
     note = f'<div class="loc-note">{html.escape(p["note"])}</div>' if p.get("note") else ""
     where = "" if p["x"] is not None else '<div class="loc-empty">Not on the map.</div>'
+    manual = manual_link(p.get("manual", ""))
     groups = []
     loose = sorted(p["spots"].get("", []), key=lambda r: r.item.lower())
     if loose:
@@ -1032,7 +1062,7 @@ def place_card(p: dict, show_empty_spots: bool) -> str:
         groups.append('<div class="loc-empty">No supplies stored here yet.</div>')
     return (f'<div class="loc-card" id="{slug(p["name"])}"><div class="loc-head">{badge}'
             f'<div class="loc-name">{html.escape(p["name"])}<span class="loc-count">{p["count"]}</span></div></div>'
-            f'{note}{where}{"".join(groups)}</div>')
+            f'{note}{manual}{where}{"".join(groups)}</div>')
 
 
 def build_places(details: list[dict], rows: list[Stock]) -> tuple[list[dict], dict]:

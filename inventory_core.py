@@ -262,6 +262,13 @@ PRESET_NOTES = {
     "Freezer box cabinet 1, empty space": "Open space in the cabinet, not yet assigned to an item.",
     "Freezer box cabinet 2, empty space": "Open space in the cabinet, not yet assigned to an item.",
 }
+# Instrument manuals: main place name (lowercased in lookups) -> PDF file name in the app's
+# manuals/ folder next to app.py. One manual per place; shown as a "View instructions" link
+# on that place's card on the Map page.
+PRESET_MANUALS = {
+    "Lab bench #3, KingFisher": "kingfisher_apex_manual.pdf",
+}
+_PRESET_MANUALS_LOWER = {name.lower(): file for name, file in PRESET_MANUALS.items()}
 PRESET_LOCATIONS = [name for name, _, _ in PRESET_PLACES]
 _PRESET_XY = {name.lower(): (x, y) for name, x, y in PRESET_PLACES}
 
@@ -552,15 +559,16 @@ class InventorySheet:
         result, seen = [], set()
         for name, x, y in PRESET_PLACES:
             row = saved.get(name.lower())
+            manual = _PRESET_MANUALS_LOWER.get(name.lower(), "")
             if row:
-                result.append({**row, "name": name, "preset": True})
+                result.append({**row, "name": name, "preset": True, "manual": manual})
             else:
                 result.append({"name": name, "added_by": "", "x": x, "y": y, "note": PRESET_NOTES.get(name, ""),
-                               "saved": False, "preset": True})
+                               "saved": False, "preset": True, "manual": manual})
             seen.add(name.lower())
         for key, row in saved.items():
             if key not in seen and key not in _RENAMED_LOWER:  # old names are moved by migrate_renamed_places()
-                result.append({**row, "preset": False})
+                result.append({**row, "preset": False, "manual": _PRESET_MANUALS_LOWER.get(key, "")})
                 seen.add(key)
         return result
 
