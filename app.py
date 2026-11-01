@@ -427,8 +427,9 @@ a.mpin:hover { transform: translate(-50%, -50%) scale(1.2); z-index: 3; }
 .loc-count { color: var(--muted); font-weight: 400; font-size: 15px; margin-left: 4px; }
 .loc-note { font-size: 15px; color: var(--ink); background: #f6f7f9; border-radius: 8px; padding: 6px 10px;
             margin-top: 10px; white-space: pre-wrap; }
+.manual-links { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
 .manual-link { display: inline-flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 600;
-               color: var(--magenta); margin-top: 10px; text-decoration: none; }
+               color: var(--magenta); text-decoration: none; }
 .manual-link:hover { text-decoration: underline; }
 .loc-items { list-style: none; margin: 10px 0 0; padding: 0; }
 .loc-items li { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 15px;
@@ -975,12 +976,14 @@ def map_image() -> str | None:
 MANUALS_DIR = Path(__file__).with_name("static") / "manuals"
 
 
-def manual_link(file_name: str) -> str:
-    """A "View instructions" link for a place's manual, or "" if the PDF isn't on disk."""
-    if not file_name or not (MANUALS_DIR / file_name).exists():
-        return ""
-    return (f'<a class="manual-link" href="app/static/manuals/{file_name}" target="_blank" rel="noopener">'
-            f'{PDF_ICON}View instructions</a>')
+def manual_links(manuals: list[tuple[str, str]]) -> str:
+    """One "View <label>" link per manual at a place, skipping any PDF that isn't on disk."""
+    links = []
+    for label, file_name in manuals:
+        if file_name and (MANUALS_DIR / file_name).exists():
+            links.append(f'<a class="manual-link" href="app/static/manuals/{file_name}" target="_blank" '
+                         f'rel="noopener">{PDF_ICON}{html.escape(label)}</a>')
+    return f'<div class="manual-links">{"".join(links)}</div>' if links else ""
 
 
 PIN_KEY = [("ok", METER, "Has supplies"), ("low", "#b45309", "Something low"), ("out", "#b42318", "Something out"),
@@ -1042,7 +1045,7 @@ def place_card(p: dict, show_empty_spots: bool) -> str:
     badge = f'<span class="mpin badge {p["state"]}">{p["count"] or ""}</span>'
     note = f'<div class="loc-note">{html.escape(p["note"])}</div>' if p.get("note") else ""
     where = "" if p["x"] is not None else '<div class="loc-empty">Not on the map.</div>'
-    manual = manual_link(p.get("manual", ""))
+    manual = manual_links(p.get("manuals", []))
     groups = []
     loose = sorted(p["spots"].get("", []), key=lambda r: r.item.lower())
     if loose:
