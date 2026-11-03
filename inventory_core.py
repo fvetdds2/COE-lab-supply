@@ -280,6 +280,9 @@ PRESET_MANUALS = {
     "Lab bench #7, specimen prep": [
         ("BioMicroLab Scan quick guide", "biomicrolab_scan_quick_guide.pdf"),
     ],
+    "Freezer supplies table": [
+    ("NCI Biospecimen resources", "nci_biospecimen_resources_jan_2026.pdf"),
+    ],
 }
 _PRESET_MANUALS_LOWER = {name.lower(): files for name, files in PRESET_MANUALS.items()}
 PRESET_LOCATIONS = [name for name, _, _ in PRESET_PLACES]
