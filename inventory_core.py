@@ -32,7 +32,7 @@ PRESET_PLACES = [
     # in % across and down). Cabinets, drawers and shelves are listed in their place's card instead of
     # getting their own pin, so the map stays readable; see parent_place().
     ("Liquid nitrogen tank", 17.0, 10.0),
-    ("-80 °C freezer C (Extracted DNA)", 28.0, 10.0),
+    ("-80 °C freezer C (plasma/serum)", 28.0, 10.0),
     ("4 °C fridge (chemicals)", 37.0, 10.0),
     ("-80 °C freezer A (DNA/RNA)", 46.0, 10.0),
     ("-80 °C freezer D (DNA/RNA)", 56.0, 10.0),
