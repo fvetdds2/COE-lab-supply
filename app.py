@@ -713,8 +713,7 @@ st.markdown(PAGE_CSS, unsafe_allow_html=True)
 require_login()
 sheet, demo_reason = get_sheet()
 demo = bool(demo_reason)
-masthead('<span class="conn demo"><i></i>Demo data</span>' if demo
-         else '<span class="conn"><i></i>Live from Google Sheets</span>')
+masthead('<span class="conn demo"><i></i>Demo data</span>' if demo else "")
 if "flash" in st.session_state:
     st.success(st.session_state.pop("flash"), icon=":material/check_circle:")
 if demo:
