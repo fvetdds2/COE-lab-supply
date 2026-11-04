@@ -1204,7 +1204,7 @@ def map_view(items: list[dict]) -> None:
     listed = {n.lower() for names in ic.ROOMS.values() for n in names}
     sections.append(("Other places", [p for p in places if p["name"].lower() not in listed]))
     for room, group in sections:
-        cards = [p for p in group if show_all or p["count"]]
+        cards = [p for p in group if show_all or p["count"] or cap_by_name.get(p["name"].lower())]
         if not cards:
             continue
         st.markdown(f'<div class="room-head">{html.escape(room)}</div>', unsafe_allow_html=True)
