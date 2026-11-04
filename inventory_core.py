@@ -273,6 +273,8 @@ PRESET_MANUALS = {
         ("INTEGRA ASSIST PLUS", "integra_assist_plus_en.pdf"),
         ("MultiCombi cassette, Smart Tips", "multicombi_cass0117_smarttips.pdf"),
         ("Multidrop Combi+ manual", "multidrop_combi_user_manual.pdf"),
+        ("Eppendorf Pipette", "eppendorf_pipette_manual.pdf"),
+        ("INTEGRA Electronic Pipette manual", "integra_viaflo_epipettes_manual.pdf"),
     ],
     "BSC #1": [
         ("MagMax DNA Multi-Sample Kit", "magmax_dna_multi_sample_kit.pdf"),
@@ -283,6 +285,16 @@ PRESET_MANUALS = {
     ],
     "Freezer supplies table": [
     ("NCI Biospecimen resources", "nci_biospecimen_resources_jan_2026.pdf"),
+    ],
+    "Lab bench #1": [
+        ("Capit-All Flex manual", "cappit_all_decapper.pdf"),
+        ("8-Channel Decapper manual", "8_channel_decapper.pdf"),
+    ],
+    "Lab bench #4": [
+            ("Thermo Drybath manual", "touchscreen_drybath_manual.pdf"),
+            ("Boekel Incubator manual", "incubator_135000_manual.pdf"),
+            ("Boekel Incubator cleaning instruction", "incubator_cleaning_procedure.pdf"),
+            ("InTemp CX405 manual", "intemp_cx405_manual.pdf"),
     ],
 }
 _PRESET_MANUALS_LOWER = {name.lower(): files for name, files in PRESET_MANUALS.items()}
