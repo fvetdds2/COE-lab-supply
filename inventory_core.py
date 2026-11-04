@@ -279,6 +279,7 @@ PRESET_MANUALS = {
     ],
     "Lab bench #7, specimen prep": [
         ("BioMicroLab Scan quick guide", "biomicrolab_scan_quick_guide.pdf"),
+        ("NanoDrop Eight manual", "nanodrop_eight.pdf"),
     ],
     "Freezer supplies table": [
     ("NCI Biospecimen resources", "nci_biospecimen_resources_jan_2026.pdf"),
