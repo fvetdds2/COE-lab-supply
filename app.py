@@ -431,6 +431,13 @@ a.mpin:hover { transform: translate(-50%, -50%) scale(1.2); z-index: 3; }
 .manual-link { display: inline-flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 600;
                color: var(--magenta); text-decoration: none; }
 .manual-link:hover { text-decoration: underline; }
+.cap-wrap { margin-top: 10px; }
+.cap-label { display: flex; justify-content: space-between; font-size: 14px; color: var(--muted); margin-bottom: 4px; }
+.cap-bar { position: relative; height: 10px; border-radius: 5px; background: var(--track); }
+.cap-fill { height: 100%; border-radius: 5px; background: var(--magenta); }
+.cap-fill.warn { background: #b45309; }
+.cap-fill.full { background: #b42318; }
+.cap-over { color: #b42318; font-weight: 700; }
 .loc-items { list-style: none; margin: 10px 0 0; padding: 0; }
 .loc-items li { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 15px;
                 padding: 6px 0; border-top: 1px solid var(--line); }
@@ -995,6 +1002,24 @@ def manual_links(manuals: list[tuple[str, str]]) -> str:
     return f'<div class="manual-links">{"".join(links)}</div>' if links else ""
 
 
+def cap_gauge(cap: dict | None) -> str:
+    """Sample-storage capacity bar for a freezer/cold storage spot ("8,000 / 10,240 samples (78%)")."""
+    if not cap or not cap.get("capacity"):
+        return ""
+    capacity = cap["capacity"]
+    on_hand = cap.get("on_hand")
+    if on_hand is None:
+        return (f'<div class="cap-wrap"><div class="cap-label"><span>Capacity</span>'
+                f'<span>{fmt(capacity)} samples · not counted yet</span></div></div>')
+    pct = on_hand / capacity if capacity else 0
+    level = "full" if pct >= 0.95 else "warn" if pct >= 0.8 else "ok"
+    width = min(pct, 1.0) * 100
+    over = f' <span class="cap-over">over capacity</span>' if pct > 1 else ""
+    return (f'<div class="cap-wrap"><div class="cap-label"><span>{fmt(on_hand)} / {fmt(capacity)} samples</span>'
+            f'<span>{pct:.0%}{over}</span></div><div class="cap-bar"><div class="cap-fill {level}" '
+            f'style="width:{width:.1f}%;"></div></div></div>')
+
+
 PIN_KEY = [("ok", METER, "Has supplies"), ("low", "#b45309", "Something low"), ("out", "#b42318", "Something out"),
            ("empty", "#9aa3af", "Nothing stored yet")]
 
@@ -1049,12 +1074,13 @@ def item_line(r: Stock) -> str:
     return f'<li><span>{html.escape(r.item)}</span><span class="qty">{html.escape(qty)} {flag}</span></li>'
 
 
-def place_card(p: dict, show_empty_spots: bool) -> str:
+def place_card(p: dict, show_empty_spots: bool, capacity: dict | None = None) -> str:
     """One card: the place, its note, then each storage spot (cabinet, drawer, shelf) with what is in it."""
     badge = f'<span class="mpin badge {p["state"]}">{p["count"] or ""}</span>'
     note = f'<div class="loc-note">{html.escape(p["note"])}</div>' if p.get("note") else ""
     where = "" if p["x"] is not None else '<div class="loc-empty">Not on the map.</div>'
     manual = manual_links(p.get("manuals", []))
+    cap = cap_gauge(capacity)
     groups = []
     loose = sorted(p["spots"].get("", []), key=lambda r: r.item.lower())
     if loose:
@@ -1071,7 +1097,7 @@ def place_card(p: dict, show_empty_spots: bool) -> str:
         groups.append('<div class="loc-empty">No supplies stored here yet.</div>')
     return (f'<div class="loc-card" id="{slug(p["name"])}"><div class="loc-head">{badge}'
             f'<div class="loc-name">{html.escape(p["name"])}<span class="loc-count">{p["count"]}</span></div></div>'
-            f'{note}{manual}{where}{"".join(groups)}</div>')
+            f'{cap}{note}{manual}{where}{"".join(groups)}</div>')
 
 
 def build_places(details: list[dict], rows: list[Stock]) -> tuple[list[dict], dict]:
@@ -1110,6 +1136,7 @@ def map_view(items: list[dict]) -> None:
     rows = stock_rows(items)
     places, mains = build_places(details, rows)
     by_name = {p["name"]: p for p in places}
+    cap_by_name = {d["name"].lower(): d for d in sheet.capacity_details()}
     renamed, moved_pins = ((sheet.renamed_places_in_use(items), sheet.saved_pin_positions()) if demo
                            else load_map_checks(sheet))
     if renamed["items"] or renamed["places"]:
@@ -1181,7 +1208,7 @@ def map_view(items: list[dict]) -> None:
         if not cards:
             continue
         st.markdown(f'<div class="room-head">{html.escape(room)}</div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="loc-grid">{"".join(place_card(p, show_all) for p in cards)}</div>',
+        st.markdown(f'<div class="loc-grid">{"".join(place_card(p, show_all, cap_by_name.get(p["name"].lower())) for p in cards)}</div>',
                     unsafe_allow_html=True)
     if unplaced:
         names = ", ".join(html.escape(r.item) for r in unplaced)
@@ -1270,6 +1297,28 @@ def map_view(items: list[dict]) -> None:
                   on_click=add_location_clicked, args=("map_new_location",))
         if "location_error" in st.session_state:
             st.error(st.session_state.pop("location_error"))
+
+    cap_list = sheet.capacity_details()
+    if cap_list:
+        with st.expander("Update sample count", icon=":material/inventory:"):
+            cap_names = [d["name"] for d in cap_list]
+            cap_pick = st.selectbox("Freezer", cap_names, key="cap_pick")
+            cap_now = next(d for d in cap_list if d["name"] == cap_pick)
+            c1, c2 = st.columns(2)
+            on_hand = c1.number_input("Samples on hand", min_value=0, step=1,
+                                      value=int(cap_now["on_hand"]) if cap_now["on_hand"] is not None else 0,
+                                      key=f"cap_on_hand_{cap_pick}")
+            capacity = c2.number_input("Capacity (samples)", min_value=1, step=1,
+                                       value=int(cap_now["capacity"]), key=f"cap_capacity_{cap_pick}")
+            if cap_now["last_updated"]:
+                st.caption(f"Last updated {cap_now['last_updated']} by {cap_now['updated_by']}.")
+            if st.button("Save sample count", type="primary", icon=":material/save:",
+                         key="cap_save") and not needs_initials():
+                try:
+                    sheet.update_capacity(cap_pick, user, on_hand, capacity)
+                    flash(f"Updated {cap_pick} ({user}).")
+                except ic.InventoryError as exc:
+                    st.error(str(exc))
 
 
 # ---- Inventory table (re-reads the sheet on its own)

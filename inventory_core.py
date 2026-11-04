@@ -1,3 +1,24 @@
+"""Lab inventory tracker backed by a Google Sheet.
+
+Core logic shared by the Streamlit app (app.py) and the command line.
+
+The spreadsheet gets two tabs:
+  * "Inventory"  - one row per item (see HEADERS)
+  * "Change log" - every add/update, with who, when, old and new value
+
+Usage columns drive the restock meter:
+  * "Per sample" - units used per extracted sample (e.g. 1 2D tube)
+  * "Per run"    - units used per 96-sample KingFisher run (e.g. 4 deep-well plates)
+Items with neither are tracked against their fixed "Target" only.
+
+Command line (needs GOOGLE_SERVICE_ACCOUNT_FILE and INVENTORY_SHEET_URL):
+    python inventory_core.py init --seed
+    python inventory_core.py list
+    python inventory_core.py add --item "Filter tips, 10 uL" --unit tip --target 500 --on-hand 200
+    python inventory_core.py update INV-0003 --set "On hand=120" --set "Notes=1 case opened" --user DS
+    python inventory_core.py coverage --goal 4000
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -9,11 +30,12 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 # Bumped whenever app.py starts relying on something new in this module.
-CORE_VERSION = 7
+CORE_VERSION = 8
 
 INVENTORY_TAB = "Inventory"
 LOG_TAB = "Change log"
 LOCATIONS_TAB = "Locations"
+CAPACITY_TAB = "Freezer capacity"
 SAMPLES_PER_RUN = 96
 TIMEZONE = ZoneInfo("America/Chicago")
 
@@ -24,6 +46,7 @@ HEADERS = [
 ]
 LOG_HEADERS = ["Timestamp", "User", "Item ID", "Item", "Field", "Old value", "New value"]
 LOCATION_HEADERS = ["Location", "Added by", "Added on", "Map X", "Map Y", "Note"]
+CAPACITY_HEADERS = ["Location", "Capacity (samples)", "Samples on hand", "Last updated", "Updated by"]
 # Storage places from the lab floor plan: (name, % across the map, % down the map).
 # None means the place is not drawn on the map yet. Staff can move pins, add notes and add
 # places in the app; those changes are saved in the Locations tab and override these defaults.
@@ -32,7 +55,7 @@ PRESET_PLACES = [
     # in % across and down). Cabinets, drawers and shelves are listed in their place's card instead of
     # getting their own pin, so the map stays readable; see parent_place().
     ("Liquid nitrogen tank", 17.0, 10.0),
-    ("-80 °C freezer C (plasma/serum)", 28.0, 10.0),
+    ("-80 °C freezer C (Plasma/Serum)", 28.0, 10.0),
     ("4 °C fridge (chemicals)", 37.0, 10.0),
     ("-80 °C freezer A (DNA/RNA)", 46.0, 10.0),
     ("-80 °C freezer D (DNA/RNA)", 56.0, 10.0),
@@ -159,7 +182,8 @@ PRESET_PLACES = [
 # that are no longer on the outline point to their bench or desk, so nothing stored there is lost.
 RENAMED_PLACES = {
     # cold room freezers/fridge relabeled (2026-11-04) with letters and contents tags
-    "-80 °C freezer #3": "-80 °C freezer C (Extracted DNA)",
+    "-80 °C freezer #3": "-80 °C freezer C (Plasma/Serum)",
+    "-80 °C freezer C (Extracted DNA)": "-80 °C freezer C (Plasma/Serum)",
     "4 °C fridge": "4 °C fridge (chemicals)",
     "-80 °C freezer #4 (DNA)": "-80 °C freezer A (DNA/RNA)",
     "-80 °C freezer #5": "-80 °C freezer D (DNA/RNA)",
@@ -287,13 +311,24 @@ PRESET_MANUALS = {
     ],
 }
 _PRESET_MANUALS_LOWER = {name.lower(): files for name, files in PRESET_MANUALS.items()}
+# Sample-storage capacity for cold storage spots that hold specimens (not chemicals or supplies).
+# Staff update the actual count under "Update sample count" on the Map page; that count and any
+# capacity change are saved in the Freezer capacity tab and overlay these defaults.
+PRESET_CAPACITY = {
+    "-80 °C freezer A (DNA/RNA)": 10240,
+    "-80 °C freezer D (DNA/RNA)": 10240,
+    "-80 °C freezer B (Plasma/Serum)": 48600,
+    "-80 °C freezer C (Plasma/Serum)": 48600,
+    "Liquid nitrogen tank": 7000,
+}
+_PRESET_CAPACITY_LOWER = {name.lower(): cap for name, cap in PRESET_CAPACITY.items()}
 PRESET_LOCATIONS = [name for name, _, _ in PRESET_PLACES]
 _PRESET_XY = {name.lower(): (x, y) for name, x, y in PRESET_PLACES}
 
 # Rooms, for grouping the place cards on the Map page (main places in floor plan order).
 ROOMS = {
     "Room 5147 · Cold storage": [
-        "Liquid nitrogen tank", "-80 °C freezer C (Extracted DNA)", "4 °C fridge (chemicals)",
+        "Liquid nitrogen tank", "-80 °C freezer C (Plasma/Serum)", "4 °C fridge (chemicals)",
         "-80 °C freezer A (DNA/RNA)", "-80 °C freezer D (DNA/RNA)",
         "-20 °C freezer E (chemicals)", "Storage supply cabinet", "storage supply shelf", "Cart #1", "Cart #2",
         "-20 °C freezer F", "-80 °C freezer B (plasma/serum)", "Freezer supplies table", "Ice machine", "Sink #3",
@@ -517,6 +552,7 @@ class InventorySheet:
         self.inventory = self._tab(INVENTORY_TAB, HEADERS)
         self.log = self._tab(LOG_TAB, LOG_HEADERS)
         self.places = self._tab(LOCATIONS_TAB, LOCATION_HEADERS)
+        self.capacity = self._tab(CAPACITY_TAB, CAPACITY_HEADERS)
 
     def _tab(self, title: str, headers: list[str]):
         try:
@@ -723,6 +759,64 @@ class InventorySheet:
             self._log(who, "-", current["name"], "Map position", where(current["x"], current["y"]), where(x, y))
         if (current["note"] or "").strip() != note:
             self._log(who, "-", current["name"], "Location note", current["note"], note)
+
+    # ---- freezer / cold storage sample capacity
+    def _saved_capacity(self) -> list[list[str]]:
+        rows = self.capacity.get_all_values()[1:]
+        return [(r + [""] * len(CAPACITY_HEADERS))[: len(CAPACITY_HEADERS)] for r in rows if r and r[0].strip()]
+
+    def capacity_details(self) -> list[dict]:
+        """Cold storage spots with a sample capacity: preset capacity first, then any saved on-hand
+        count or capacity override. A spot with no capacity set (chemicals, supplies) is left out.
+        """
+        saved = {}
+        for name, cap, on_hand, when, by in self._saved_capacity():
+            saved[name.strip().lower()] = {
+                "name": name.strip(), "capacity": to_number(cap), "on_hand": to_number(on_hand),
+                "last_updated": when, "updated_by": by,
+            }
+        result, seen = [], set()
+        for name, cap in PRESET_CAPACITY.items():
+            row = saved.get(name.lower())
+            if row:
+                result.append({**row, "name": name, "capacity": cap if row["capacity"] is None else row["capacity"]})
+            else:
+                result.append({"name": name, "capacity": cap, "on_hand": None, "last_updated": "", "updated_by": ""})
+            seen.add(name.lower())
+        for key, row in saved.items():
+            if key not in seen:
+                result.append(row)
+                seen.add(key)
+        return result
+
+    def update_capacity(self, name: str, user: str, on_hand: float | None, capacity: float | None = None) -> dict:
+        """Save a cold storage spot's current sample count (and optionally override its capacity)."""
+        if not user.strip():
+            raise InventoryError("Enter your initials first.")
+        who = user.strip().upper()
+        current = next((d for d in self.capacity_details() if d["name"].lower() == name.lower()), None)
+        cap = capacity if capacity is not None else (current["capacity"] if current else
+                                                      _PRESET_CAPACITY_LOWER.get(name.lower()))
+        if cap is None:
+            raise InventoryError(f"No capacity set for {name}; give a capacity first.")
+        cap = clean_number(cap)
+        on_hand = None if on_hand is None else max(0.0, float(on_hand))
+        values = [cap, "" if on_hand is None else clean_number(on_hand), now_text(), who]
+        row_number = next((i for i, r in enumerate(self.capacity.get_all_values()[1:], start=2)
+                           if r and r[0].strip().lower() == name.lower()), None)
+        if row_number:
+            self.capacity.update(values=[values], range_name=f"B{row_number}:E{row_number}",
+                                 value_input_option="USER_ENTERED")
+        else:
+            self.capacity.append_row([name, *values], value_input_option="USER_ENTERED")
+        old_on_hand = current["on_hand"] if current else None
+        old_cap = current["capacity"] if current else _PRESET_CAPACITY_LOWER.get(name.lower())
+        if old_on_hand != on_hand:
+            self._log(who, "-", name, "Samples on hand", "" if old_on_hand is None else old_on_hand,
+                      "" if on_hand is None else on_hand)
+        if old_cap != cap:
+            self._log(who, "-", name, "Sample capacity", "" if old_cap is None else old_cap, cap)
+        return {"name": name, "capacity": cap, "on_hand": on_hand}
 
     def changes(self, limit: int = 200) -> list[dict]:
         values = self.log.get_all_values()
