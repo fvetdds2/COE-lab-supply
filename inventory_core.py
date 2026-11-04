@@ -56,7 +56,7 @@ PRESET_PLACES = [
     ("-80 °C freezer C (Extracted DNA)", 28.0, 10.0),
     ("4 °C fridge (chemicals)", 37.0, 10.0),
     ("-80 °C freezer A (DNA/RNA)", 46.0, 10.0),
-    ("-80 °C freezer D (plasma/serum)", 56.0, 10.0),
+    ("-80 °C freezer D (DNA/RNA)", 56.0, 10.0),
     ("-20 °C freezer E (chemicals)", 65.0, 10.0),
     ("Storage supply cabinet", 75.0, 10.0),
     ("storage supply shelf", 90.0, 10.0),
@@ -179,6 +179,15 @@ PRESET_PLACES = [
 # Locations-tab rows still saved under an old name are moved over by migrate_renamed_places(). Storage spots
 # that are no longer on the outline point to their bench or desk, so nothing stored there is lost.
 RENAMED_PLACES = {
+    # cold room freezers/fridge relabeled (2026-11-04) with letters and contents tags
+    "-80 °C freezer #3": "-80 °C freezer C (Extracted DNA)",
+    "4 °C fridge": "4 °C fridge (chemicals)",
+    "-80 °C freezer #4 (DNA)": "-80 °C freezer A (DNA/RNA)",
+    "-80 °C freezer #5": "-80 °C freezer D (DNA/RNA)",
+    "-20 °C freezer #1": "-20 °C freezer E (chemicals)",
+    "Cold storage supply cabinet": "Storage supply cabinet",
+    "-80 °C freezer #1": "-20 °C freezer F",
+    "-80 °C freezer #2": "-80 °C freezer B (plasma/serum)",
     "Lab desk #1": "Desk #4",
     "Lab desk #2": "Desk #3",
     "Lab bench #4": "Bench #4",
@@ -305,9 +314,10 @@ _PRESET_XY = {name.lower(): (x, y) for name, x, y in PRESET_PLACES}
 # Rooms, for grouping the place cards on the Map page (main places in floor plan order).
 ROOMS = {
     "Room 5147 · Cold storage": [
-        "Liquid nitrogen tank", "-80 °C freezer #3", "4 °C fridge", "-80 °C freezer #4 (DNA)", "-80 °C freezer #5",
-        "-20 °C freezer #1", "Cold storage supply cabinet", "storage supply shelf", "Cart #1", "Cart #2",
-        "-80 °C freezer #1", "-80 °C freezer #2", "Freezer supplies table", "Ice machine", "Sink #3",
+        "Liquid nitrogen tank", "-80 °C freezer C (Extracted DNA)", "4 °C fridge (chemicals)",
+        "-80 °C freezer A (DNA/RNA)", "-80 °C freezer D (DNA/RNA)",
+        "-20 °C freezer E (chemicals)", "Storage supply cabinet", "storage supply shelf", "Cart #1", "Cart #2",
+        "-20 °C freezer F", "-80 °C freezer B (plasma/serum)", "Freezer supplies table", "Ice machine", "Sink #3",
         "Freezer box cabinet 1", "Freezer box cabinet 2",
     ],
     "Room 5149 · Main lab": [
