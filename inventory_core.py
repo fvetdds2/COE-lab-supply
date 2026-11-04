@@ -290,11 +290,12 @@ PRESET_MANUALS = {
         ("Capit-All Flex manual", "cappit_all_decapper.pdf"),
         ("8-Channel Decapper manual", "8_channel_decapper.pdf"),
     ],
-    "Lab bench #4": [
+    "Bench #4": [
             ("Thermo Drybath manual", "touchscreen_drybath_manual.pdf"),
             ("Boekel Incubator manual", "incubator_135000_manual.pdf"),
             ("Boekel Incubator cleaning instruction", "incubator_cleaning_procedure.pdf"),
             ("InTemp CX405 manual", "intemp_cx405_manual.pdf"),
+            ("Integra VIAFLO 96/384 Pipette System demonstration", "https://www.youtube.com/watch?v=PC9eAISGE1o"),
     ],
 }
 _PRESET_MANUALS_LOWER = {name.lower(): files for name, files in PRESET_MANUALS.items()}

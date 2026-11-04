@@ -561,6 +561,9 @@ PDF_ICON = ('<svg viewBox="0 0 24 24" aria-hidden="true" width="15" height="15">
             'c1 0 1.8.8 1.8 1.8s-.8 1.7-1.8 1.7H9v1.5H8V13zm1 1v1.3h1.1c.4 0 .7-.3.7-.65S10.5 14 10.1 14H9zm4'
             ' 0h2v1h-1.3v.7H15v1h-1.3V18H12v-4zm5 0h-1.3v3H17c.8 0 1.3-.5 1.3-1.5S17.8 14 17 14zm-.3 1v1h.3'
             'c.2 0 .3-.15.3-.5s-.1-.5-.3-.5h-.3z"/></svg>')
+VIDEO_ICON = ('<svg viewBox="0 0 24 24" aria-hidden="true" width="15" height="15"><path fill="currentColor" '
+              'd="M4 5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3.5l4 3V7.5l-4 3V7a2 2 0 0 0-2-2H4z"/>'
+              '</svg>')
 
 
 def groups_html(rows: list[Stock], group_order: list[str], by: str = "category") -> str:
@@ -977,11 +980,17 @@ MANUALS_DIR = Path(__file__).with_name("static") / "manuals"
 
 
 def manual_links(manuals: list[tuple[str, str]]) -> str:
-    """One "View <label>" link per manual at a place, skipping any PDF that isn't on disk."""
+    """One link per resource at a place: a PDF in static/manuals/, or an external URL (e.g. a how-to
+    video) when the second value starts with http:// or https:// - skips any local PDF not on disk."""
     links = []
-    for label, file_name in manuals:
-        if file_name and (MANUALS_DIR / file_name).exists():
-            links.append(f'<a class="manual-link" href="app/static/manuals/{file_name}" target="_blank" '
+    for label, target in manuals:
+        if not target:
+            continue
+        if target.startswith(("http://", "https://")):
+            links.append(f'<a class="manual-link" href="{html.escape(target, quote=True)}" target="_blank" '
+                         f'rel="noopener">{VIDEO_ICON}{html.escape(label)}</a>')
+        elif (MANUALS_DIR / target).exists():
+            links.append(f'<a class="manual-link" href="app/static/manuals/{target}" target="_blank" '
                          f'rel="noopener">{PDF_ICON}{html.escape(label)}</a>')
     return f'<div class="manual-links">{"".join(links)}</div>' if links else ""
 
