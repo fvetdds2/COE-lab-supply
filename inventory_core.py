@@ -1,24 +1,3 @@
-"""Lab inventory tracker backed by a Google Sheet.
-
-Core logic shared by the Streamlit app (app.py) and the command line.
-
-The spreadsheet gets two tabs:
-  * "Inventory"  - one row per item (see HEADERS)
-  * "Change log" - every add/update, with who, when, old and new value
-
-Usage columns drive the restock meter:
-  * "Per sample" - units used per extracted sample (e.g. 1 2D tube)
-  * "Per run"    - units used per 96-sample KingFisher run (e.g. 4 deep-well plates)
-Items with neither are tracked against their fixed "Target" only.
-
-Command line (needs GOOGLE_SERVICE_ACCOUNT_FILE and INVENTORY_SHEET_URL):
-    python inventory_core.py init --seed
-    python inventory_core.py list
-    python inventory_core.py add --item "Filter tips, 10 uL" --unit tip --target 500 --on-hand 200
-    python inventory_core.py update INV-0003 --set "On hand=120" --set "Notes=1 case opened" --user DS
-    python inventory_core.py coverage --goal 4000
-"""
-
 from __future__ import annotations
 
 import argparse
