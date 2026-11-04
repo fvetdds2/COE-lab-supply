@@ -30,7 +30,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 # Bumped whenever app.py starts relying on something new in this module.
-CORE_VERSION = 8
+CORE_VERSION = 9
 
 INVENTORY_TAB = "Inventory"
 LOG_TAB = "Change log"
@@ -403,10 +403,12 @@ class InventoryError(ValueError):
 
 
 try:  # a missing tab raises WorksheetNotFound in gspread, KeyError in the in-memory stand-in
+    from gspread.exceptions import APIError as _GspreadAPIError
     from gspread.exceptions import WorksheetNotFound as _GspreadNotFound
     _NOT_FOUND: tuple = (_GspreadNotFound, KeyError)
 except ImportError:  # pragma: no cover - gspread not installed (demo/tests only)
     _NOT_FOUND = (KeyError,)
+    _GspreadAPIError = ()
 
 
 # --------------------------------------------------------------------------- helpers
@@ -558,7 +560,12 @@ class InventorySheet:
         try:
             ws = self.spreadsheet.worksheet(title)
         except _NOT_FOUND:
-            ws = self.spreadsheet.add_worksheet(title=title, rows=1000, cols=len(headers))
+            try:
+                ws = self.spreadsheet.add_worksheet(title=title, rows=1000, cols=len(headers))
+            except _GspreadAPIError:
+                # another session (or an earlier, interrupted run) already created this tab
+                # between our check above and this create; use the one that is actually there.
+                ws = self.spreadsheet.worksheet(title)
         if hasattr(ws, "col_count") and ws.col_count < len(headers):
             ws.add_cols(len(headers) - ws.col_count)  # older tab with fewer columns
         first_row = ws.get_all_values()[:1]
