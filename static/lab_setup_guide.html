@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clinical Lab Startup Map</title>
+<style>
+/* ============ DESIGN PLAN ============
+   Layout: a horizontal specimen-pipeline diagram (8 numbered stations, like a
+   chain-of-custody flow) pinned above a long-form checklist, one accordion
+   section per station, each item tagged with its NCI Best Practices citation —
+   read as a specimen requisition form crossed with a lab bench SOP sheet.
+   Color: cold-storage blue/navy as the working color, biohazard amber as the
+   single accent for anything regulatory or required, warm paper neutrals.
+   Type: IBM Plex Sans for display/body (technical, legible, built for data-dense
+   interfaces), IBM Plex Mono for citations/labels/counters (reads like a
+   specimen barcode label).
+*/
+:root{
+  --bg:#f4f2ec; --surface:#ffffff; --surface-2:#ececE3;
+  --ink:#16222b; --ink-dim:#51606b; --line:#d9d4c6;
+  --navy:#17394a; --navy-2:#0e2733; --teal:#2d7d7a;
+  --amber:#c7701f; --amber-soft:#f3e3cf;
+  --ok:#2d7d52;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#11191f; --surface:#182229; --surface-2:#1f2a32;
+    --ink:#e7ebef; --ink-dim:#9db0bb; --line:#2c3942;
+    --navy:#8fc1d6; --navy-2:#bcdbe8; --teal:#6fc2bd;
+    --amber:#e0a257; --amber-soft:#3a2f1e;
+    --ok:#6fcf97;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#11191f; --surface:#182229; --surface-2:#1f2a32;
+  --ink:#e7ebef; --ink-dim:#9db0bb; --line:#2c3942;
+  --navy:#8fc1d6; --navy-2:#bcdbe8; --teal:#6fc2bd;
+  --amber:#e0a257; --amber-soft:#3a2f1e;
+  --ok:#6fcf97;
+  color-scheme: dark;
+}
+*{box-sizing:border-box;}
+html,body{background:var(--bg);}
+body{
+  margin:0; color:var(--ink);
+  font-family:"IBM Plex Sans",system-ui,-apple-system,sans-serif;
+  padding-left:max(16px, env(safe-area-inset-left,0px));
+  padding-right:max(16px, env(safe-area-inset-right,0px));
+}
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace;}
+.wrap{max-width:980px; margin:0 auto; padding-block:28px 64px;}
+
+/* ---- header ---- */
+header{margin-bottom:28px;}
+.eyebrow{
+  font-family:"IBM Plex Mono",monospace; font-size:12px; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--amber); font-weight:600;
+}
+h1{
+  font-size:clamp(26px,4.5vw,38px); line-height:1.1; margin:.35em 0 .3em;
+  letter-spacing:-.01em; text-wrap:balance;
+}
+.lede{color:var(--ink-dim); max-width:62ch; font-size:15.5px; line-height:1.55;}
+.source-tag{
+  display:inline-flex; align-items:center; gap:6px; margin-top:14px;
+  font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink-dim);
+  border:1px solid var(--line); border-radius:999px; padding:5px 12px; background:var(--surface);
+}
+.source-tag b{color:var(--ink); font-weight:600;}
+
+/* ---- overall progress ---- */
+.progress-card{
+  background:var(--surface); border:1px solid var(--line); border-radius:14px;
+  padding:16px 18px; margin:22px 0 32px; display:flex; align-items:center; gap:16px;
+}
+.progress-card .num{font-family:"IBM Plex Mono",monospace; font-size:22px; font-weight:600; color:var(--navy); min-width:3.6ch;}
+:root[data-theme="dark"] .progress-card .num{color:var(--navy-2);}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .progress-card .num{color:var(--navy-2);} }
+.progress-card .bar-track{flex:1; height:8px; border-radius:99px; background:var(--surface-2); overflow:hidden; min-width:0;}
+.progress-card .bar-fill{height:100%; background:linear-gradient(90deg,var(--teal),var(--navy)); border-radius:99px; transition:width .35s ease;}
+.progress-card .lab{font-size:12.5px; color:var(--ink-dim);}
+
+/* ---- pipeline diagram ---- */
+.pipeline{
+  display:flex; gap:0; overflow-x:auto; padding:4px 4px 14px; margin:0 -4px 36px;
+  scroll-snap-type:x proximity;
+}
+.pipeline::-webkit-scrollbar{height:6px;}
+.station{
+  flex:0 0 150px; scroll-snap-align:start; text-align:left; cursor:pointer;
+  background:none; border:none; padding:0; font:inherit; color:inherit;
+  display:flex; flex-direction:column; align-items:flex-start;
+}
+.station .connector{
+  width:100%; height:2px; background:var(--line); position:relative; margin-top:21px;
+}
+.station:first-child .connector{visibility:hidden;}
+.station-top{display:flex; align-items:center; gap:10px; margin-bottom:10px;}
+.station-badge{
+  width:42px; height:42px; border-radius:11px; flex:none; display:grid; place-items:center;
+  background:var(--surface); border:1.5px solid var(--line); color:var(--navy);
+  transition:border-color .2s, background .2s;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .station-badge{color:var(--navy-2);} }
+:root[data-theme="dark"] .station-badge{color:var(--navy-2);}
+.station.complete .station-badge{background:var(--ok); border-color:var(--ok); color:#fff;}
+.station-badge svg{width:20px; height:20px;}
+.station-idx{font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--amber); font-weight:700;}
+.station-name{font-size:13px; font-weight:600; line-height:1.25; padding-right:10px;}
+.station-count{font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--ink-dim); margin-top:3px;}
+
+/* ---- sections ---- */
+.phase{
+  background:var(--surface); border:1px solid var(--line); border-radius:16px;
+  margin-bottom:14px; overflow:hidden; scroll-margin-top:16px;
+}
+.phase-head{
+  width:100%; display:flex; align-items:center; gap:14px; padding:16px 18px;
+  background:none; border:none; cursor:pointer; text-align:left; font:inherit; color:inherit;
+}
+.phase-head .badge{
+  width:34px; height:34px; border-radius:9px; flex:none; display:grid; place-items:center;
+  background:var(--navy); color:#fff;
+}
+.phase-head .badge svg{width:17px; height:17px;}
+.phase-head .titles{flex:1; min-width:0;}
+.phase-head h2{font-size:16.5px; margin:0 0 2px; letter-spacing:-.01em;}
+.phase-head .meta{font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink-dim);}
+.phase-head .chev{color:var(--ink-dim); flex:none; transition:transform .2s;}
+.phase.open .phase-head .chev{transform:rotate(90deg);}
+.phase-bar{height:4px; background:var(--surface-2); margin:0 18px;}
+.phase-bar-fill{height:100%; background:var(--teal); border-radius:99px;}
+.phase-body{padding:4px 18px 16px; display:none;}
+.phase.open .phase-body{display:block;}
+.phase-intro{font-size:13px; color:var(--ink-dim); margin:10px 0 14px; max-width:68ch;}
+
+ul.items{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:1px;}
+ul.items li{
+  display:flex; gap:12px; align-items:flex-start; padding:10px 8px; border-radius:8px;
+}
+ul.items li:hover{background:var(--surface-2);}
+ul.items input[type=checkbox]{
+  appearance:none; -webkit-appearance:none; width:19px; height:19px; min-width:19px; margin-top:1px;
+  border:1.5px solid var(--line); border-radius:5px; cursor:pointer; position:relative; background:var(--surface);
+}
+ul.items input[type=checkbox]:checked{background:var(--ok); border-color:var(--ok);}
+ul.items input[type=checkbox]:checked::after{
+  content:""; position:absolute; left:5px; top:1px; width:5px; height:10px;
+  border:solid #fff; border-width:0 2px 2px 0; transform:rotate(45deg);
+}
+ul.items label{flex:1; min-width:0; font-size:14px; line-height:1.5; cursor:pointer;}
+ul.items li.done label{color:var(--ink-dim); text-decoration:line-through; text-decoration-color:var(--line);}
+.cite{
+  font-family:"IBM Plex Mono",monospace; font-size:10.5px; color:var(--amber);
+  background:var(--amber-soft); border-radius:5px; padding:1px 6px; margin-left:8px; white-space:nowrap;
+}
+
+footer{margin-top:40px; padding-top:18px; border-top:1px solid var(--line); font-size:12px; color:var(--ink-dim); line-height:1.6;}
+footer a{color:var(--teal);}
+
+@media (max-width:560px){
+  .progress-card{flex-wrap:wrap;}
+  .phase-head{padding:14px;}
+  .phase-body{padding:2px 14px 14px;}
+}
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Biospecimen Resource · Setup Planner</div>
+    <h1>Clinical research laboratory startup map</h1>
+    <p class="lede">An eight-station path from governance plan to first audit, with a checklist pulled from the practices a new human-specimen lab is expected to have in place at each stage. Check off what's done — your progress is saved on this device.</p>
+    <div class="source-tag">Grounded in <b>NCI Best Practices for Biospecimen Resources</b>, 4th ed., Jan 2026 — citations like <span class="mono">C.2.8.2</span> point to its section numbers.</div>
+  </header>
+
+  <div class="progress-card">
+    <div class="num mono" id="overallNum">0%</div>
+    <div class="bar-track"><div class="bar-fill" id="overallBar" style="width:0%"></div></div>
+    <div class="lab mono" id="overallLab">0 / 0 items</div>
+  </div>
+
+  <nav class="pipeline" id="pipeline" aria-label="Setup phases"></nav>
+
+  <main id="phases"></main>
+
+  <footer>
+    Source: National Cancer Institute, Biorepositories and Biospecimen Research Branch. <em>NCI Best Practices for Biospecimen Resources</em>, 4th Edition, January 2026. Section letters/numbers in each tag (e.g. <span class="mono">B.5</span>, <span class="mono">C.3.3.1</span>) refer to that document. This map paraphrases its recommendations for planning purposes — treat it as a starting checklist, not a substitute for reading the source sections or for your institution's own IRB, biosafety, and CLIA/CAP requirements.
+  </footer>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+var ICONS = {
+  governance: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3l8 4v5c0 5-3.5 7.8-8 9-4.5-1.2-8-4-8-9V7l8-4z"/></svg>',
+  org: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="5.5" r="2.5"/><circle cx="5.5" cy="18" r="2.5"/><circle cx="18.5" cy="18" r="2.5"/><path d="M12 8v4M12 12l-5 4M12 12l5 4"/></svg>',
+  space: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3.5" y="4" width="17" height="16" rx="1.5"/><path d="M3.5 10h17M9 10v10"/></svg>',
+  biosafety: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2"/><path d="M12 3.5v3M12 17.5v3M3.5 12h3M17.5 12h3M6.3 6.3l2.1 2.1M15.6 15.6l2.1 2.1M17.7 6.3l-2.1 2.1M8.4 15.6l-2.1 2.1"/></svg>',
+  quality: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 3.5h9l3 3V20a.6.6 0 01-.6.6H6.6A.6.6 0 016 20V3.5z"/><path d="M9 11l2 2 4-4.5M9 16h6"/></svg>',
+  data: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><ellipse cx="12" cy="5.5" rx="7.5" ry="2.5"/><path d="M4.5 5.5V18c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5V5.5M4.5 11.75c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5"/></svg>',
+  tube: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 3h6M10 3v13a2 2 0 104 0V3"/><path d="M10 13h4"/></svg>',
+  launch: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M13 3c3 1 5 4.5 5 8 0 2-1 4-2 5l-1-3-3-1-1-3c1-1 3-2 5-2"/><path d="M8 13l-4 4 3 3 4-4M6 19l-2-2"/></svg>'
+};
+
+var PHASES = [
+  {
+    id:"governance", icon:"governance", name:"Governance &amp; Ethics Plan",
+    intro:"Built before a single specimen is collected: who the resource serves, how consent and privacy are handled, and what happens if the funding or the institution's priorities change.",
+    items:[
+      ["Draft a governance plan naming the resource's scientific objectives, intended specimen/data uses, and data-sharing plan","B.1"],
+      ["Assign custodian and steward roles explicitly, and confirm neither has a conflict of interest","B.1 / B.2"],
+      ["Stand up oversight bodies appropriate to the resource's size (Scientific Advisory, Community Advisory, Biospecimen Use/Access Committee)","B.3 / C.1.2.2"],
+      ["Build a transparency package — funding sources, mission, data-sharing policy, contact info — in plain language, publicly posted","B.4"],
+      ["Design the informed consent process: broad vs. study-specific consent, 45 CFR 46 Subpart A, NIH Genomic Data Sharing Policy alignment","B.5"],
+      ["Decide the policy for returning individual results and incidental findings, including whether an honest-broker mechanism is needed","B.6 / C.6.2.2"],
+      ["Write privacy and confidentiality protections consistent with HIPAA/HITECH","B.7"],
+      ["Set access criteria and a review process for releasing specimens/data to outside investigators","B.8"],
+      ["Draft Material Transfer Agreement templates and an IP/licensing policy","B.9"],
+      ["Document a financial and nonfinancial conflict-of-interest policy covering every stakeholder group","B.10"],
+      ["Write a legacy and contingency plan for loss of funding, leadership turnover, or discontinuation","B.12"]
+    ]
+  },
+  {
+    id:"org", icon:"org", name:"Organization &amp; Business Plan",
+    intro:"The people, roles, and money behind the resource — documented before the SOPs are, so the SOPs have an organization to attach to.",
+    items:[
+      ["Draft an organizational chart and display it publicly; walk every new hire through it","C.1.1.2"],
+      ["Define personnel categories: management team (director, technical director, QA lead), research support, internal support, external/vendor roles","C.1.2.1"],
+      ["Confirm a pathologist (or qualified designee) reviews and releases tissue specimens for research use","C.1.2"],
+      ["Stand up required oversight committees and document their conflict-of-interest screening","C.1.2.2 / C.1.2.3"],
+      ["Write a documented, SMART-goal business plan covering startup costs, sustainability, and continuity/disaster planning","C.1.3.3"],
+      ["Choose the baseline standards to build to — ISBER Best Practices, ISO 20387, CAP BAP, CLIA — before writing SOPs","C.1.3.2"]
+    ]
+  },
+  {
+    id:"space", icon:"space", name:"Space, Equipment &amp; Procurement",
+    intro:"Physical capacity and the gear to fill it, sized to the resource's actual workflow rather than fit in after the fact.",
+    items:[
+      ["Complete a facilities needs assessment: collection/receiving, processing benches, blood-product prep, histology/cytology prep, storage, pathology review, office space","C.1.4"],
+      ["Plan core equipment — biosafety cabinets, centrifuges, LN2 tanks, freezers/fridges — with backup cooling and 24/7 alarm monitoring","C.1.4 / C.2.8.5"],
+      ["Select and validate the biospecimen tracking/LIMS platform in parallel with the physical layout, not after it","C.1.4 / C.6.4"],
+      ["Evaluate equipment vendors on lifespan, warranty, service contracts, and calibration/validation support","C.1.5.1"],
+      ["Set up a vetted procurement process with documented supply-chain integrity for critical consumables","C.1.5.2"],
+      ["Put a project plan in place for the buildout itself — milestones, timeline, deliverables","C.1.5.3"]
+    ]
+  },
+  {
+    id:"biosafety", icon:"biosafety", name:"Biosafety &amp; Regulatory Compliance",
+    intro:"Every human specimen is treated as a biohazard from the moment it's collected; the compliance layer (OSHA, CLIA, HIPAA) has to be live before processing starts, not audited in afterward.",
+    items:[
+      ["Implement OSHA's Bloodborne Pathogens Standard (29 CFR 1910.1030): hepatitis B vaccination offer, PPE, hand-washing policy","C.4.1.1"],
+      ["Establish BSL-2 containment with a certified biosafety cabinet for specimen handling","C.4.1.2"],
+      ["Run a biosafety risk assessment and set up an exposure/incident reporting process","C.4.2.2 / C.4.2.5"],
+      ["Confirm whether CDC Select Agents and Toxins regulations apply, and build compliance if so","C.4.1.3"],
+      ["File for a CLIA certificate (waiver or higher) and/or pursue CAP, ANAB, or ISO 20387 accreditation matched to the lab's testing scope","Intro"],
+      ["Build HIPAA/HITECH-compliant handling for any protected health information tied to specimens","C.5.2.1 / C.6.6.3"]
+    ]
+  },
+  {
+    id:"quality", icon:"quality", name:"Quality Management &amp; SOPs",
+    intro:"The resource's operating manual — not aspirational documents, but the ones staff are trained on, sign off on, and get audited against.",
+    items:[
+      ["Establish a documented Quality Management System with QA/QC policy, performance monitoring, and corrective-action process","C.3.1"],
+      ["Write and approve a full SOP manual: consent status, equipment calibration, supply control, specimen ID/labeling, collection/processing, storage/retrieval, shipping/receiving, in-house testing, informatics, biosafety, training, security","C.3.3.1"],
+      ["Set up document control for SOP versioning, review intervals, and archived-vs-current access","C.3.3"],
+      ["Build initial and ongoing staff training/competency records, including HIPAA, safety, and bloodborne-pathogen training","C.3.2"],
+      ["Schedule internal self-audits — document traceability, staff readiness drills, SOP compliance checks","C.1.6.1 / C.3.2"]
+    ]
+  },
+  {
+    id:"data", icon:"data", name:"Biospecimen Informatics &amp; Tracking",
+    intro:"The database that proves a specimen is where the label says it is, who touched it, and when — the backbone every other section depends on.",
+    items:[
+      ["Select or build a validated LIMS that tracks specimens from collection through distribution or destruction","C.6.1 / C.6.2.3"],
+      ["Assign non-descriptive unique identifiers (and GUIDs where useful) to every specimen and derivative — never embed PHI in the ID itself","C.2.8.4 / C.6.2.2"],
+      ["Implement role-based access control and a secure, non-editable audit trail for all PHI/PII access","C.6.1.4 / C.6.1.5"],
+      ["Document a 21 CFR Part 11 validation plan for the informatics system before go-live","C.6.5.5"],
+      ["Set up data backup, disaster recovery, and periodic security testing","C.6.5.2"]
+    ]
+  },
+  {
+    id:"tube", icon:"tube", name:"Collection, Storage &amp; Shipping SOPs",
+    intro:"Specimen-type-specific protocols — the preanalytical details (ischemia time, fixation, tube type) that determine whether the sample is still useful for research three years from now.",
+    items:[
+      ["Write per-specimen-type SOPs for collection containers, processing steps, and preservation method (fresh-frozen, FFPE, RNAlater, etc.)","C.2.4.1.2"],
+      ["Record preanalytical factors for every specimen — warm/cold ischemia time, fixation duration, collection tube type","C.2.4.1 / C.2.4.1.2.2"],
+      ["Set storage-temperature validation protocols, freezer temperature mapping, and limits on freeze-thaw cycling","C.2.8.2 / C.2.8.3"],
+      ["Implement physical security, access logs, and role-based permissions for storage areas","C.2.8.6 / C.2.9"],
+      ["Build a shipping SOP: packaging and temperature qualification, IATA/UN1845 dry-ice compliance, temperature loggers, MTAs for transfers","C.2.10"]
+    ]
+  },
+  {
+    id:"launch", icon:"launch", name:"Launch &amp; Ongoing Evaluation",
+    intro:"The resource doesn't stop being 'new' on opening day — evaluation and re-audit are built into the plan from the start.",
+    items:[
+      ["Define KPIs for ongoing evaluation: cost-per-specimen, turnaround time, distribution/discard rate, utilization rate","C.1.6.2 / C.1.6.3"],
+      ["Schedule periodic self-audits using the ISBER Biobank Assessment Tool or the CAP BAP checklist","C.1.6.1 / App. 6"],
+      ["Coordinate resource evaluation cycles with updates to the legacy and contingency plan","C.1.6"],
+      ["Set a review cycle for SOPs, the governance plan, and the informatics system","C.3.3 / C.6.6.4"]
+    ]
+  }
+];
+
+var STORE_KEY = "clinlab-setup-v1";
+var state = {};
+try{ state = JSON.parse(localStorage.getItem(STORE_KEY) || "{}"); }catch(e){ state = {}; }
+
+function save(){
+  try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }catch(e){}
+}
+
+var pipelineEl = document.getElementById("pipeline");
+var phasesEl = document.getElementById("phases");
+
+PHASES.forEach(function(phase, pIdx){
+  // pipeline station
+  var station = document.createElement("button");
+  station.className = "station";
+  station.id = "station-" + phase.id;
+  station.innerHTML =
+    '<div class="connector"></div>' +
+    '<div class="station-top"><div class="station-badge">'+ICONS[phase.icon]+'</div>' +
+      '<div><div class="station-idx">0'+(pIdx+1)+'</div><div class="station-name">'+phase.name+'</div></div></div>' +
+    '<div class="station-count mono" id="count-'+phase.id+'">0 / '+phase.items.length+'</div>';
+  station.addEventListener("click", function(){
+    document.getElementById("phase-"+phase.id).scrollIntoView({behavior:"smooth", block:"start"});
+    openPhase(phase.id, true);
+  });
+  pipelineEl.appendChild(station);
+
+  // phase section
+  var section = document.createElement("section");
+  section.className = "phase";
+  section.id = "phase-" + phase.id;
+
+  var head = document.createElement("button");
+  head.className = "phase-head";
+  head.innerHTML =
+    '<div class="badge">'+ICONS[phase.icon]+'</div>' +
+    '<div class="titles"><h2>0'+(pIdx+1)+'. '+phase.name+'</h2><div class="meta" id="meta-'+phase.id+'">0 / '+phase.items.length+' complete</div></div>' +
+    '<svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>';
+  head.addEventListener("click", function(){ togglePhase(phase.id); });
+  section.appendChild(head);
+
+  var barWrap = document.createElement("div");
+  barWrap.className = "phase-bar";
+  barWrap.innerHTML = '<div class="phase-bar-fill" id="bar-'+phase.id+'" style="width:0%"></div>';
+  section.appendChild(barWrap);
+
+  var body = document.createElement("div");
+  body.className = "phase-body";
+  var p = document.createElement("p");
+  p.className = "phase-intro";
+  p.textContent = phase.intro;
+  body.appendChild(p);
+
+  var ul = document.createElement("ul");
+  ul.className = "items";
+  phase.items.forEach(function(item, iIdx){
+    var id = phase.id + "-" + iIdx;
+    var li = document.createElement("li");
+    var cb = document.createElement("input");
+    cb.type = "checkbox"; cb.id = id;
+    cb.checked = !!state[id];
+    if(cb.checked) li.classList.add("done");
+    cb.addEventListener("change", function(){
+      state[id] = cb.checked;
+      li.classList.toggle("done", cb.checked);
+      save();
+      updateCounts();
+    });
+    var label = document.createElement("label");
+    label.setAttribute("for", id);
+    label.innerHTML = item[0] + ' <span class="cite">'+item[1]+'</span>';
+    li.appendChild(cb); li.appendChild(label);
+    ul.appendChild(li);
+  });
+  body.appendChild(ul);
+  section.appendChild(body);
+  phasesEl.appendChild(section);
+});
+
+function togglePhase(id){
+  var isOpen = document.getElementById("phase-"+id).classList.contains("open");
+  openPhase(id, !isOpen);
+}
+function openPhase(id, open){
+  var el = document.getElementById("phase-"+id);
+  if(open){ el.classList.add("open"); } else { el.classList.remove("open"); }
+}
+
+function updateCounts(){
+  var totalDone = 0, totalAll = 0;
+  PHASES.forEach(function(phase){
+    var done = 0;
+    phase.items.forEach(function(item, iIdx){
+      if(state[phase.id+"-"+iIdx]) done++;
+    });
+    var all = phase.items.length;
+    totalDone += done; totalAll += all;
+    var pct = all ? Math.round(done/all*100) : 0;
+    document.getElementById("count-"+phase.id).textContent = done + " / " + all;
+    document.getElementById("meta-"+phase.id).textContent = done + " / " + all + " complete";
+    document.getElementById("bar-"+phase.id).style.width = pct + "%";
+    document.getElementById("station-"+phase.id).classList.toggle("complete", all>0 && done===all);
+  });
+  var overallPct = totalAll ? Math.round(totalDone/totalAll*100) : 0;
+  document.getElementById("overallNum").textContent = overallPct + "%";
+  document.getElementById("overallBar").style.width = overallPct + "%";
+  document.getElementById("overallLab").textContent = totalDone + " / " + totalAll + " items";
+}
+
+// open the first phase by default
+openPhase(PHASES[0].id, true);
+updateCounts();
+
+})();
+</script>
+</body>
+</html>

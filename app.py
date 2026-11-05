@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 import inventory_core as ic
 
@@ -736,7 +737,7 @@ if not items:
         added = sheet.seed_starter_items(user)
         flash(f"Added {added} starter items.")
 
-VIEWS = ["Map", "Meter", "Order", "Receive", "Use", "Count", "Items", "Edit", "Log"]
+VIEWS = ["Map", "Meter", "Order", "Receive", "Use", "Count", "Items", "Edit", "Log", "Setup Guide"]
 view = st.segmented_control("Go to", VIEWS, default="Map", key="view", label_visibility="collapsed")
 view = view or "Map"
 
@@ -1541,6 +1542,17 @@ elif view == "Log":
         st.dataframe(shown.drop(columns=["Date"]), hide_index=True, width="stretch")
         st.download_button("Download log (CSV)", shown.drop(columns=["Date"]).to_csv(index=False),
                            file_name="coe_inventory_change_log.csv", mime="text/csv")
+
+elif view == "Setup Guide":
+    st.subheader("Clinical research laboratory startup map")
+    st.caption("An interactive checklist, grounded in the NCI Best Practices for Biospecimen Resources, "
+              "for setting up (or auditing) a clinical biospecimen lab. Checked items are saved in your "
+              "browser on this device, not in the shared sheet.")
+    guide_path = Path(__file__).parent / "static" / "lab_setup_guide.html"
+    if guide_path.exists():
+        components.html(guide_path.read_text(encoding="utf-8"), height=2600, scrolling=True)
+    else:
+        st.error("static/lab_setup_guide.html is missing; re-add it next to app.py.")
 
 
 # ---- footer
