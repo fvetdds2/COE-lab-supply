@@ -309,7 +309,7 @@ PRESET_MANUALS = {
             ("InTemp CX405 manual", "intemp_cx405_manual.pdf"),
             ("Integra VIAFLO 96/384 Pipette System demonstration", "https://www.youtube.com/watch?v=PC9eAISGE1o"),
     ],
-    "-80 °C freezer C (T4C plasma/serum)" [
+    "-80 °C freezer C (T4C plasma/serum)": [
             ("T15E Securitas Healthcare Temperature Tag manual", "t15e_tag_deployment_and_user_guide.pdf"),
     ],
 }
