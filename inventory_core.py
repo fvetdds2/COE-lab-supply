@@ -57,7 +57,7 @@ PRESET_PLACES = [
     ("Liquid nitrogen tank", 17.0, 10.0),
     ("-80 °C freezer C (Plasma/Serum)", 28.0, 10.0),
     ("4 °C fridge (chemicals)", 37.0, 10.0),
-    ("-80 °C freezer A (DNA/RNA)", 46.0, 10.0),
+    ("-80 °C freezer B (DNA/RNA)", 46.0, 10.0),
     ("-80 °C freezer D (DNA/RNA)", 56.0, 10.0),
     ("-20 °C freezer E (chemicals)", 65.0, 10.0),
     ("Storage supply cabinet", 75.0, 10.0),
@@ -65,7 +65,7 @@ PRESET_PLACES = [
     ("Cart #1", 77.0, 22.0),
     ("Cart #2", 86.0, 22.0),
     ("-20 °C freezer F", 28.0, 35.0),
-    ("-80 °C freezer B (plasma/serum)", 37.0, 35.0),
+    ("-80 °C freezer A (T4C plasma/serum)", 37.0, 35.0),
     ("Freezer supplies table", 51.0, 35.0),
     ("Ice machine", 62.0, 35.0),
     ("Sink #3", 77.0, 35.0),
@@ -185,12 +185,12 @@ RENAMED_PLACES = {
     "-80 °C freezer #3": "-80 °C freezer C (Plasma/Serum)",
     "-80 °C freezer C (Extracted DNA)": "-80 °C freezer C (Plasma/Serum)",
     "4 °C fridge": "4 °C fridge (chemicals)",
-    "-80 °C freezer #4 (DNA)": "-80 °C freezer A (DNA/RNA)",
+    "-80 °C freezer #4 (DNA)": "-80 °C freezer B (DNA/RNA)",
     "-80 °C freezer #5": "-80 °C freezer D (DNA/RNA)",
     "-20 °C freezer #1": "-20 °C freezer E (chemicals)",
     "Cold storage supply cabinet": "Storage supply cabinet",
     "-80 °C freezer #1": "-20 °C freezer F",
-    "-80 °C freezer #2": "-80 °C freezer B (plasma/serum)",
+    "-80 °C freezer #2": "-80 °C freezer A (T4C plasma/serum)",
     "Lab desk #1": "Desk #4",
     "Lab desk #2": "Desk #3",
     "Lab bench #4": "Bench #4",
@@ -315,10 +315,10 @@ _PRESET_MANUALS_LOWER = {name.lower(): files for name, files in PRESET_MANUALS.i
 # Staff update the actual count under "Update sample count" on the Map page; that count and any
 # capacity change are saved in the Freezer capacity tab and overlay these defaults.
 PRESET_CAPACITY = {
-    "-80 °C freezer A (DNA/RNA)": 10240,
-    "-80 °C freezer D (DNA/RNA)": 10240,
-    "-80 °C freezer B (Plasma/Serum)": 48600,
-    "-80 °C freezer C (Plasma/Serum)": 48600,
+    "-80 °C freezer B (DNA/RNA)": 8192,
+    "-80 °C freezer D (DNA/RNA)": 8192,
+    "-80 °C freezer A (T4C Plasma/Serum)": 48600,
+    "-80 °C freezer C (T4C Plasma/Serum)": 48600,
     "Liquid nitrogen tank": 7000,
 }
 _PRESET_CAPACITY_LOWER = {name.lower(): cap for name, cap in PRESET_CAPACITY.items()}
@@ -328,10 +328,10 @@ _PRESET_XY = {name.lower(): (x, y) for name, x, y in PRESET_PLACES}
 # Rooms, for grouping the place cards on the Map page (main places in floor plan order).
 ROOMS = {
     "Room 5147 · Cold storage": [
-        "Liquid nitrogen tank", "-80 °C freezer C (Plasma/Serum)", "4 °C fridge (chemicals)",
-        "-80 °C freezer A (DNA/RNA)", "-80 °C freezer D (DNA/RNA)",
+        "Liquid nitrogen tank", "-80 °C freezer C (T4C Plasma/Serum)", "4 °C fridge (chemicals)",
+        "-80 °C freezer B (DNA/RNA)", "-80 °C freezer D (DNA/RNA)",
         "-20 °C freezer E (chemicals)", "Storage supply cabinet", "storage supply shelf", "Cart #1", "Cart #2",
-        "-20 °C freezer F", "-80 °C freezer B (plasma/serum)", "Freezer supplies table", "Ice machine", "Sink #3",
+        "-20 °C freezer F", "-80 °C freezer A (T4C plasma/serum)", "Freezer supplies table", "Ice machine", "Sink #3",
         "Freezer box cabinet 1", "Freezer box cabinet 2",
     ],
     "Room 5149 · Main lab": [
