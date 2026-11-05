@@ -30,7 +30,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 # Bumped whenever app.py starts relying on something new in this module.
-CORE_VERSION = 9
+CORE_VERSION = 10
 
 INVENTORY_TAB = "Inventory"
 LOG_TAB = "Change log"
@@ -182,15 +182,18 @@ PRESET_PLACES = [
 # that are no longer on the outline point to their bench or desk, so nothing stored there is lost.
 RENAMED_PLACES = {
     # cold room freezers/fridge relabeled (2026-11-04) with letters and contents tags
-    "-80 °C freezer #3": "-80 °C freezer C (Plasma/Serum)",
-    "-80 °C freezer C (Extracted DNA)": "-80 °C freezer C (Plasma/Serum)",
+    "-80 °C freezer #3": "-80 °C freezer C (T4C plasma/serum)",
+    "-80 °C freezer C (Extracted DNA)": "-80 °C freezer C (T4C plasma/serum)",
+    "-80 °C freezer C (Plasma/Serum)": "-80 °C freezer C (T4C plasma/serum)",
     "4 °C fridge": "4 °C fridge (chemicals)",
-    "-80 °C freezer #4 (DNA)": "-80 °C freezer A (DNA/RNA)",
+    "-80 °C freezer #4 (DNA)": "-80 °C freezer B (DNA/RNA)",
+    "-80 °C freezer A (DNA/RNA)": "-80 °C freezer B (DNA/RNA)",
     "-80 °C freezer #5": "-80 °C freezer D (DNA/RNA)",
     "-20 °C freezer #1": "-20 °C freezer E (chemicals)",
     "Cold storage supply cabinet": "Storage supply cabinet",
     "-80 °C freezer #1": "-20 °C freezer F",
-    "-80 °C freezer #2": "-80 °C freezer B (plasma/serum)",
+    "-80 °C freezer #2": "-80 °C freezer A (T4C plasma/serum)",
+    "-80 °C freezer B (plasma/serum)": "-80 °C freezer A (T4C plasma/serum)",
     "Lab desk #1": "Desk #4",
     "Lab desk #2": "Desk #3",
     "Lab bench #4": "Bench #4",
@@ -309,19 +312,16 @@ PRESET_MANUALS = {
             ("InTemp CX405 manual", "intemp_cx405_manual.pdf"),
             ("Integra VIAFLO 96/384 Pipette System demonstration", "https://www.youtube.com/watch?v=PC9eAISGE1o"),
     ],
-    "-80 °C freezer C (T4C plasma/serum)": [
-            ("T15E Securitas Healthcare Temperature Tag manual", "t15e_tag_deployment_and_user_guide.pdf"),
-    ],
 }
 _PRESET_MANUALS_LOWER = {name.lower(): files for name, files in PRESET_MANUALS.items()}
 # Sample-storage capacity for cold storage spots that hold specimens (not chemicals or supplies).
 # Staff update the actual count under "Update sample count" on the Map page; that count and any
 # capacity change are saved in the Freezer capacity tab and overlay these defaults.
 PRESET_CAPACITY = {
-    "-80 °C freezer A (DNA/RNA)": 10240,
+    "-80 °C freezer B (DNA/RNA)": 10240,
     "-80 °C freezer D (DNA/RNA)": 10240,
-    "-80 °C freezer B (Plasma/Serum)": 48600,
-    "-80 °C freezer C (Plasma/Serum)": 48600,
+    "-80 °C freezer A (T4C plasma/serum)": 48600,
+    "-80 °C freezer C (T4C plasma/serum)": 48600,
     "Liquid nitrogen tank": 7000,
 }
 _PRESET_CAPACITY_LOWER = {name.lower(): cap for name, cap in PRESET_CAPACITY.items()}
@@ -331,10 +331,10 @@ _PRESET_XY = {name.lower(): (x, y) for name, x, y in PRESET_PLACES}
 # Rooms, for grouping the place cards on the Map page (main places in floor plan order).
 ROOMS = {
     "Room 5147 · Cold storage": [
-        "Liquid nitrogen tank", "-80 °C freezer C (Plasma/Serum)", "4 °C fridge (chemicals)",
-        "-80 °C freezer A (DNA/RNA)", "-80 °C freezer D (DNA/RNA)",
+        "Liquid nitrogen tank", "-80 °C freezer C (T4C plasma/serum)", "4 °C fridge (chemicals)",
+        "-80 °C freezer B (DNA/RNA)", "-80 °C freezer D (DNA/RNA)",
         "-20 °C freezer E (chemicals)", "Storage supply cabinet", "storage supply shelf", "Cart #1", "Cart #2",
-        "-20 °C freezer F", "-80 °C freezer B (plasma/serum)", "Freezer supplies table", "Ice machine", "Sink #3",
+        "-20 °C freezer F", "-80 °C freezer A (T4C plasma/serum)", "Freezer supplies table", "Ice machine", "Sink #3",
         "Freezer box cabinet 1", "Freezer box cabinet 2",
     ],
     "Room 5149 · Main lab": [
