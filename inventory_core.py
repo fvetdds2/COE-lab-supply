@@ -55,7 +55,7 @@ PRESET_PLACES = [
     # in % across and down). Cabinets, drawers and shelves are listed in their place's card instead of
     # getting their own pin, so the map stays readable; see parent_place().
     ("Liquid nitrogen tank", 17.0, 10.0),
-    ("-80 °C freezer C (Plasma/Serum)", 28.0, 10.0),
+    ("-80 °C freezer C (T4C plasma/serum)", 28.0, 10.0),
     ("4 °C fridge (chemicals)", 37.0, 10.0),
     ("-80 °C freezer B (DNA/RNA)", 46.0, 10.0),
     ("-80 °C freezer D (DNA/RNA)", 56.0, 10.0),
@@ -185,12 +185,12 @@ RENAMED_PLACES = {
     "-80 °C freezer #3": "-80 °C freezer C (Plasma/Serum)",
     "-80 °C freezer C (Extracted DNA)": "-80 °C freezer C (Plasma/Serum)",
     "4 °C fridge": "4 °C fridge (chemicals)",
-    "-80 °C freezer #4 (DNA)": "-80 °C freezer B (DNA/RNA)",
+    "-80 °C freezer #4 (DNA)": "-80 °C freezer A (DNA/RNA)",
     "-80 °C freezer #5": "-80 °C freezer D (DNA/RNA)",
     "-20 °C freezer #1": "-20 °C freezer E (chemicals)",
     "Cold storage supply cabinet": "Storage supply cabinet",
     "-80 °C freezer #1": "-20 °C freezer F",
-    "-80 °C freezer #2": "-80 °C freezer A (T4C plasma/serum)",
+    "-80 °C freezer #2": "-80 °C freezer B (plasma/serum)",
     "Lab desk #1": "Desk #4",
     "Lab desk #2": "Desk #3",
     "Lab bench #4": "Bench #4",
@@ -315,10 +315,10 @@ _PRESET_MANUALS_LOWER = {name.lower(): files for name, files in PRESET_MANUALS.i
 # Staff update the actual count under "Update sample count" on the Map page; that count and any
 # capacity change are saved in the Freezer capacity tab and overlay these defaults.
 PRESET_CAPACITY = {
-    "-80 °C freezer B (DNA/RNA)": 8192,
-    "-80 °C freezer D (DNA/RNA)": 8192,
-    "-80 °C freezer A (T4C Plasma/Serum)": 48600,
-    "-80 °C freezer C (T4C Plasma/Serum)": 48600,
+    "-80 °C freezer A (DNA/RNA)": 10240,
+    "-80 °C freezer D (DNA/RNA)": 10240,
+    "-80 °C freezer B (Plasma/Serum)": 48600,
+    "-80 °C freezer C (Plasma/Serum)": 48600,
     "Liquid nitrogen tank": 7000,
 }
 _PRESET_CAPACITY_LOWER = {name.lower(): cap for name, cap in PRESET_CAPACITY.items()}
@@ -328,10 +328,10 @@ _PRESET_XY = {name.lower(): (x, y) for name, x, y in PRESET_PLACES}
 # Rooms, for grouping the place cards on the Map page (main places in floor plan order).
 ROOMS = {
     "Room 5147 · Cold storage": [
-        "Liquid nitrogen tank", "-80 °C freezer C (T4C Plasma/Serum)", "4 °C fridge (chemicals)",
-        "-80 °C freezer B (DNA/RNA)", "-80 °C freezer D (DNA/RNA)",
+        "Liquid nitrogen tank", "-80 °C freezer C (Plasma/Serum)", "4 °C fridge (chemicals)",
+        "-80 °C freezer A (DNA/RNA)", "-80 °C freezer D (DNA/RNA)",
         "-20 °C freezer E (chemicals)", "Storage supply cabinet", "storage supply shelf", "Cart #1", "Cart #2",
-        "-20 °C freezer F", "-80 °C freezer A (T4C plasma/serum)", "Freezer supplies table", "Ice machine", "Sink #3",
+        "-20 °C freezer F", "-80 °C freezer B (plasma/serum)", "Freezer supplies table", "Ice machine", "Sink #3",
         "Freezer box cabinet 1", "Freezer box cabinet 2",
     ],
     "Room 5149 · Main lab": [
@@ -778,8 +778,10 @@ class InventorySheet:
         """
         saved = {}
         for name, cap, on_hand, when, by in self._saved_capacity():
-            saved[name.strip().lower()] = {
-                "name": name.strip(), "capacity": to_number(cap), "on_hand": to_number(on_hand),
+            # a row saved under an old freezer name (before a rename) still counts for its new name
+            current_name = _RENAMED_LOWER.get(name.strip().lower(), name.strip())
+            saved[current_name.lower()] = {
+                "name": current_name, "capacity": to_number(cap), "on_hand": to_number(on_hand),
                 "last_updated": when, "updated_by": by,
             }
         result, seen = [], set()
@@ -809,10 +811,14 @@ class InventorySheet:
         cap = clean_number(cap)
         on_hand = None if on_hand is None else max(0.0, float(on_hand))
         values = [cap, "" if on_hand is None else clean_number(on_hand), now_text(), who]
-        row_number = next((i for i, r in enumerate(self.capacity.get_all_values()[1:], start=2)
-                           if r and r[0].strip().lower() == name.lower()), None)
+        rows = self.capacity.get_all_values()[1:]
+        # match either the current name, or an old name that now renames to it (so a count saved
+        # before a freezer rename is updated in place instead of leaving a stale, orphaned row)
+        row_number = next((i for i, r in enumerate(rows, start=2) if r and (
+            r[0].strip().lower() == name.lower()
+            or (_RENAMED_LOWER.get(r[0].strip().lower()) or "").lower() == name.lower())), None)
         if row_number:
-            self.capacity.update(values=[values], range_name=f"B{row_number}:E{row_number}",
+            self.capacity.update(values=[[name, *values]], range_name=f"A{row_number}:E{row_number}",
                                  value_input_option="USER_ENTERED")
         else:
             self.capacity.append_row([name, *values], value_input_option="USER_ENTERED")
