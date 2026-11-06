@@ -30,12 +30,13 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 # Bumped whenever app.py starts relying on something new in this module.
-CORE_VERSION = 10
+CORE_VERSION = 11
 
 INVENTORY_TAB = "Inventory"
 LOG_TAB = "Change log"
 LOCATIONS_TAB = "Locations"
 CAPACITY_TAB = "Freezer capacity"
+EQUIPMENT_TAB = "Equipment maintenance"
 SAMPLES_PER_RUN = 96
 TIMEZONE = ZoneInfo("America/Chicago")
 
@@ -47,6 +48,10 @@ HEADERS = [
 LOG_HEADERS = ["Timestamp", "User", "Item ID", "Item", "Field", "Old value", "New value"]
 LOCATION_HEADERS = ["Location", "Added by", "Added on", "Map X", "Map Y", "Note"]
 CAPACITY_HEADERS = ["Location", "Capacity (samples)", "Samples on hand", "Last updated", "Updated by"]
+EQUIPMENT_HEADERS = ["Equipment", "Last repair date", "Repair notes", "Last calibration date",
+                     "Next calibration due", "Last updated", "Updated by"]
+# How many days before "Next calibration due" an item counts as due soon rather than ok.
+CALIBRATION_DUE_SOON_DAYS = 30
 # Storage places from the lab floor plan: (name, % across the map, % down the map).
 # None means the place is not drawn on the map yet. Staff can move pins, add notes and add
 # places in the app; those changes are saved in the Locations tab and override these defaults.
@@ -300,9 +305,6 @@ PRESET_MANUALS = {
     ],
     "Freezer supplies table": [
     ("NCI Biospecimen resources", "nci_biospecimen_resources_jan_2026.pdf"),
-    ("Securitas Healthcare logger manual", "t15e_tag_deployment_and_user_guide.pdf"),
-    ("Thermo Scientific TSX freezer manual", "tsx_user_manual.pdf"),
-    ("Stirling ultracold freezer manual", "vault_100_manual.pdf"),
     ],
     "Lab bench #1": [
         ("Capit-All Flex manual", "cappit_all_decapper.pdf"),
@@ -313,7 +315,6 @@ PRESET_MANUALS = {
             ("Boekel Incubator manual", "incubator_135000_manual.pdf"),
             ("Boekel Incubator cleaning instruction", "incubator_cleaning_procedure.pdf"),
             ("InTemp CX405 manual", "intemp_cx405_manual.pdf"),
-            ("Zymo Research DNA/RNA Magbead protocol", "zymo_dna_rna_magbead.pdf"),
             ("Integra VIAFLO 96/384 Pipette System demonstration", "https://www.youtube.com/watch?v=PC9eAISGE1o"),
     ],
 }
@@ -329,6 +330,35 @@ PRESET_CAPACITY = {
     "Liquid nitrogen tank": 7000,
 }
 _PRESET_CAPACITY_LOWER = {name.lower(): cap for name, cap in PRESET_CAPACITY.items()}
+# Instruments and cold-storage units staff log repair and calibration dates for, each tied to the
+# main place it lives at (so its status badge shows on that place's Map card). Staff pick from this
+# list under "Update repair / calibration" on the Map page; nothing here is editable by name.
+PRESET_EQUIPMENT = [
+    ("KingFisher Apex", "Lab bench #3, KingFisher"),
+    ("Centrifuge", "Lab bench #2, centrifuge"),
+    ("NanoDrop Eight", "Lab bench #7, specimen prep"),
+    ("BioMicroLab Scan", "Lab bench #7, specimen prep"),
+    ("INTEGRA ASSIST PLUS", "Lab bench #6, extraction"),
+    ("Multidrop Combi+", "Lab bench #6, extraction"),
+    ("INTEGRA VIAFLO 96/384", "Lab bench #6, extraction"),
+    ("Eppendorf electronic pipette", "Lab bench #1"),
+    ("Capit-All Flex decapper", "Lab bench #1"),
+    ("8-Channel decapper", "Lab bench #1"),
+    ("BSC #1 (biosafety cabinet)", "BSC #1"),
+    ("Thermo Drybath", "Bench #4"),
+    ("Boekel incubator", "Bench #4"),
+    ("InTemp CX405 logger", "Bench #4"),
+    ("Liquid nitrogen tank", "Liquid nitrogen tank"),
+    ("-80 °C freezer A (T4C plasma/serum)", "-80 °C freezer A (T4C plasma/serum)"),
+    ("-80 °C freezer B (DNA/RNA)", "-80 °C freezer B (DNA/RNA)"),
+    ("-80 °C freezer C (T4C plasma/serum)", "-80 °C freezer C (T4C plasma/serum)"),
+    ("-80 °C freezer D (DNA/RNA)", "-80 °C freezer D (DNA/RNA)"),
+    ("-20 °C freezer E (chemicals)", "-20 °C freezer E (chemicals)"),
+    ("-20 °C freezer F", "-20 °C freezer F"),
+    ("4 °C fridge (chemicals)", "4 °C fridge (chemicals)"),
+    ("Chemical hood", "Chemical hood"),
+]
+_PRESET_EQUIPMENT_PLACE = {name.lower(): place for name, place in PRESET_EQUIPMENT}
 PRESET_LOCATIONS = [name for name, _, _ in PRESET_PLACES]
 _PRESET_XY = {name.lower(): (x, y) for name, x, y in PRESET_PLACES}
 
@@ -474,6 +504,23 @@ def auto_status(on_hand: float | None, reorder_at: float | None, current: str = 
     return "In stock"
 
 
+def calibration_status(next_due) -> str:
+    """"overdue" / "due_soon" / "ok" / "unset" from a "Next calibration due" date (any parseable date text)."""
+    text = str(next_due or "").strip()
+    if not text:
+        return "unset"
+    try:
+        due = datetime.strptime(text[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return "unset"
+    delta = (due - datetime.now(TIMEZONE).date()).days
+    if delta < 0:
+        return "overdue"
+    if delta <= CALIBRATION_DUE_SOON_DAYS:
+        return "due_soon"
+    return "ok"
+
+
 # --------------------------------------------------------------------------- restock math
 
 def runs_needed(goal_samples: int) -> int:
@@ -562,6 +609,7 @@ class InventorySheet:
         self.log = self._tab(LOG_TAB, LOG_HEADERS)
         self.places = self._tab(LOCATIONS_TAB, LOCATION_HEADERS)
         self.capacity = self._tab(CAPACITY_TAB, CAPACITY_HEADERS)
+        self.equipment = self._tab(EQUIPMENT_TAB, EQUIPMENT_HEADERS)
 
     def _tab(self, title: str, headers: list[str]):
         try:
@@ -837,6 +885,70 @@ class InventorySheet:
         if old_cap != cap:
             self._log(who, "-", name, "Sample capacity", "" if old_cap is None else old_cap, cap)
         return {"name": name, "capacity": cap, "on_hand": on_hand}
+
+    # ---- equipment repair / calibration
+    def _saved_equipment(self) -> list[list[str]]:
+        rows = self.equipment.get_all_values()[1:]
+        return [(r + [""] * len(EQUIPMENT_HEADERS))[: len(EQUIPMENT_HEADERS)] for r in rows if r and r[0].strip()]
+
+    def equipment_details(self) -> list[dict]:
+        """Every tracked instrument with its repair/calibration dates and due status.
+
+        Preset instruments first (place name attached so the Map page can badge the right card),
+        then any staff added that are not in the preset list.
+        """
+        saved = {}
+        for name, repair_date, repair_notes, cal_date, cal_due, when, by in self._saved_equipment():
+            current_name = _RENAMED_LOWER.get(name.strip().lower(), name.strip())
+            saved[current_name.lower()] = {
+                "name": current_name, "last_repair": repair_date, "repair_notes": repair_notes,
+                "last_calibration": cal_date, "next_due": cal_due, "last_updated": when, "updated_by": by,
+            }
+        result, seen = [], set()
+        for name, place in PRESET_EQUIPMENT:
+            row = saved.get(name.lower())
+            base = {"name": name, "place": place, "last_repair": "", "repair_notes": "",
+                    "last_calibration": "", "next_due": "", "last_updated": "", "updated_by": ""}
+            result.append({**base, **row, "place": place} if row else base)
+            seen.add(name.lower())
+        for key, row in saved.items():
+            if key not in seen:
+                result.append({**row, "place": _PRESET_EQUIPMENT_PLACE.get(key)})
+                seen.add(key)
+        for d in result:
+            d["status"] = calibration_status(d.get("next_due"))
+        return result
+
+    def update_equipment(self, name: str, user: str, last_repair: str | None = None, repair_notes: str = "",
+                         last_calibration: str | None = None, next_due: str | None = None) -> dict:
+        """Save an instrument's latest repair date/notes and calibration date/next-due date."""
+        if not user.strip():
+            raise InventoryError("Enter your initials first.")
+        who = user.strip().upper()
+        current = next((d for d in self.equipment_details() if d["name"].lower() == name.lower()), None)
+        last_repair = (last_repair or "").strip()
+        repair_notes = (repair_notes or "").strip()
+        last_calibration = (last_calibration or "").strip()
+        next_due = (next_due or "").strip()
+        values = [last_repair, repair_notes, last_calibration, next_due, now_text(), who]
+        rows = self.equipment.get_all_values()[1:]
+        row_number = next((i for i, r in enumerate(rows, start=2) if r and (
+            r[0].strip().lower() == name.lower()
+            or (_RENAMED_LOWER.get(r[0].strip().lower()) or "").lower() == name.lower())), None)
+        if row_number:
+            self.equipment.update(values=[[name, *values]], range_name=f"A{row_number}:G{row_number}",
+                                  value_input_option="USER_ENTERED")
+        else:
+            self.equipment.append_row([name, *values], value_input_option="USER_ENTERED")
+        fields = [("Last repair date", "last_repair", last_repair), ("Repair notes", "repair_notes", repair_notes),
+                  ("Last calibration date", "last_calibration", last_calibration),
+                  ("Next calibration due", "next_due", next_due)]
+        for label, key, new_val in fields:
+            old_val = (current or {}).get(key) or ""
+            if old_val != new_val:
+                self._log(who, "-", name, label, old_val, new_val)
+        return {"name": name, "last_repair": last_repair, "repair_notes": repair_notes,
+                "last_calibration": last_calibration, "next_due": next_due}
 
     def changes(self, limit: int = 200) -> list[dict]:
         values = self.log.get_all_values()

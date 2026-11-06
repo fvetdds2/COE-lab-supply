@@ -439,6 +439,15 @@ a.mpin:hover { transform: translate(-50%, -50%) scale(1.2); z-index: 3; }
 .cap-fill.warn { background: #b45309; }
 .cap-fill.full { background: #b42318; }
 .cap-over { color: #b42318; font-weight: 700; }
+.equip-wrap { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.equip-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13px; }
+.equip-row .equip-name { color: var(--muted); }
+.equip-sub { font-size: 11.5px; }
+.equip-pill { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.equip-pill.ok { background: #e6f4ea; color: #1e7a3d; }
+.equip-pill.due_soon { background: #fdf0d8; color: #92400e; }
+.equip-pill.overdue { background: #fde2e1; color: #a0221a; }
+.equip-pill.unset { background: var(--track); color: var(--muted); }
 .loc-items { list-style: none; margin: 10px 0 0; padding: 0; }
 .loc-items li { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 15px;
                 padding: 6px 0; border-top: 1px solid var(--line); }
@@ -1020,6 +1029,26 @@ def cap_gauge(cap: dict | None) -> str:
             f'style="width:{width:.1f}%;"></div></div></div>')
 
 
+EQUIP_PILL_TEXT = {"overdue": "Overdue", "due_soon": "Due soon", "ok": "OK", "unset": "Not tracked"}
+
+
+def equip_html(equip_list: list[dict] | None) -> str:
+    """Repair/calibration status rows for the instruments that live at one place."""
+    if not equip_list:
+        return ""
+    rows = []
+    for e in sorted(equip_list, key=lambda e: ("overdue", "due_soon", "unset", "ok").index(e["status"])):
+        detail = []
+        if e.get("last_calibration"):
+            detail.append(f"cal. {e['last_calibration']}")
+        if e.get("next_due"):
+            detail.append(f"due {e['next_due']}")
+        sub = f' <span class="equip-sub">({", ".join(detail)})</span>' if detail else ""
+        rows.append(f'<div class="equip-row"><span class="equip-name">{html.escape(e["name"])}{sub}</span>'
+                   f'<span class="equip-pill {e["status"]}">{EQUIP_PILL_TEXT[e["status"]]}</span></div>')
+    return f'<div class="equip-wrap">{"".join(rows)}</div>'
+
+
 PIN_KEY = [("ok", METER, "Has supplies"), ("low", "#b45309", "Something low"), ("out", "#b42318", "Something out"),
            ("empty", "#9aa3af", "Nothing stored yet")]
 
@@ -1074,13 +1103,15 @@ def item_line(r: Stock) -> str:
     return f'<li><span>{html.escape(r.item)}</span><span class="qty">{html.escape(qty)} {flag}</span></li>'
 
 
-def place_card(p: dict, show_empty_spots: bool, capacity: dict | None = None) -> str:
+def place_card(p: dict, show_empty_spots: bool, capacity: dict | None = None,
+               equipment: list[dict] | None = None) -> str:
     """One card: the place, its note, then each storage spot (cabinet, drawer, shelf) with what is in it."""
     badge = f'<span class="mpin badge {p["state"]}">{p["count"] or ""}</span>'
     note = f'<div class="loc-note">{html.escape(p["note"])}</div>' if p.get("note") else ""
     where = "" if p["x"] is not None else '<div class="loc-empty">Not on the map.</div>'
     manual = manual_links(p.get("manuals", []))
     cap = cap_gauge(capacity)
+    equip = equip_html(equipment)
     groups = []
     loose = sorted(p["spots"].get("", []), key=lambda r: r.item.lower())
     if loose:
@@ -1097,7 +1128,7 @@ def place_card(p: dict, show_empty_spots: bool, capacity: dict | None = None) ->
         groups.append('<div class="loc-empty">No supplies stored here yet.</div>')
     return (f'<div class="loc-card" id="{slug(p["name"])}"><div class="loc-head">{badge}'
             f'<div class="loc-name">{html.escape(p["name"])}<span class="loc-count">{p["count"]}</span></div></div>'
-            f'{cap}{note}{manual}{where}{"".join(groups)}</div>')
+            f'{cap}{equip}{note}{manual}{where}{"".join(groups)}</div>')
 
 
 def build_places(details: list[dict], rows: list[Stock]) -> tuple[list[dict], dict]:
@@ -1137,6 +1168,10 @@ def map_view(items: list[dict]) -> None:
     places, mains = build_places(details, rows)
     by_name = {p["name"]: p for p in places}
     cap_by_name = {d["name"].lower(): d for d in sheet.capacity_details()}
+    equip_by_place: dict[str, list[dict]] = {}
+    for d in sheet.equipment_details():
+        if d.get("place"):
+            equip_by_place.setdefault(d["place"].lower(), []).append(d)
     renamed, moved_pins = ((sheet.renamed_places_in_use(items), sheet.saved_pin_positions()) if demo
                            else load_map_checks(sheet))
     if renamed["items"] or renamed["places"]:
@@ -1204,11 +1239,12 @@ def map_view(items: list[dict]) -> None:
     listed = {n.lower() for names in ic.ROOMS.values() for n in names}
     sections.append(("Other places", [p for p in places if p["name"].lower() not in listed]))
     for room, group in sections:
-        cards = [p for p in group if show_all or p["count"] or cap_by_name.get(p["name"].lower())]
+        cards = [p for p in group if show_all or p["count"] or cap_by_name.get(p["name"].lower())
+                or equip_by_place.get(p["name"].lower())]
         if not cards:
             continue
         st.markdown(f'<div class="room-head">{html.escape(room)}</div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="loc-grid">{"".join(place_card(p, show_all, cap_by_name.get(p["name"].lower())) for p in cards)}</div>',
+        st.markdown(f'<div class="loc-grid">{"".join(place_card(p, show_all, cap_by_name.get(p["name"].lower()), equip_by_place.get(p["name"].lower())) for p in cards)}</div>',
                     unsafe_allow_html=True)
     if unplaced:
         names = ", ".join(html.escape(r.item) for r in unplaced)
@@ -1317,6 +1353,55 @@ def map_view(items: list[dict]) -> None:
                 try:
                     sheet.update_capacity(cap_pick, user, on_hand, capacity)
                     flash(f"Updated {cap_pick} ({user}).")
+                except ic.InventoryError as exc:
+                    st.error(str(exc))
+
+    equip_list = sheet.equipment_details()
+    if equip_list:
+        overdue = sum(1 for e in equip_list if e["status"] == "overdue")
+        due_soon = sum(1 for e in equip_list if e["status"] == "due_soon")
+        flag = f" — {overdue} overdue, {due_soon} due soon" if overdue or due_soon else ""
+        with st.expander(f"Update repair / calibration{flag}", icon=":material/build:"):
+            def parse_date(text: str):
+                text = (text or "").strip()
+                try:
+                    return datetime.strptime(text[:10], "%Y-%m-%d").date()
+                except ValueError:
+                    return None
+
+            equip_names = [e["name"] for e in equip_list]
+            equip_pick = st.selectbox("Equipment", equip_names, key="equip_pick",
+                                      format_func=lambda n: n + (f"  ({p})" if (p := next(
+                                          (e['place'] for e in equip_list if e['name'] == n), None)) else ""))
+            equip_now = next(e for e in equip_list if e["name"] == equip_pick)
+            e1, e2 = st.columns(2)
+            last_repair = e1.date_input("Last repair date", value=parse_date(equip_now["last_repair"]),
+                                        key=f"equip_repair_{equip_pick}")
+            repair_notes = e2.text_input("Repair notes", value=equip_now["repair_notes"],
+                                         key=f"equip_repair_notes_{equip_pick}",
+                                         placeholder="e.g. Replaced O-ring, vendor visit")
+            e3, e4 = st.columns(2)
+            last_cal = e3.date_input("Last calibration date", value=parse_date(equip_now["last_calibration"]),
+                                     key=f"equip_cal_{equip_pick}")
+            next_due = e4.date_input("Next calibration due", value=parse_date(equip_now["next_due"]),
+                                     key=f"equip_due_{equip_pick}")
+            if equip_now["status"] == "overdue":
+                st.warning("Calibration is overdue.")
+            elif equip_now["status"] == "due_soon":
+                st.warning(f"Calibration is due within {ic.CALIBRATION_DUE_SOON_DAYS} days.")
+            if equip_now["last_updated"]:
+                st.caption(f"Last updated {equip_now['last_updated']} by {equip_now['updated_by']}.")
+            if st.button("Save repair / calibration", type="primary", icon=":material/save:",
+                         key="equip_save") and not needs_initials():
+                try:
+                    sheet.update_equipment(
+                        equip_pick, user,
+                        last_repair=last_repair.isoformat() if last_repair else "",
+                        repair_notes=repair_notes,
+                        last_calibration=last_cal.isoformat() if last_cal else "",
+                        next_due=next_due.isoformat() if next_due else "",
+                    )
+                    flash(f"Updated {equip_pick} ({user}).")
                 except ic.InventoryError as exc:
                     st.error(str(exc))
 
