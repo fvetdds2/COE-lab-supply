@@ -301,6 +301,8 @@ PRESET_MANUALS = {
     "Freezer supplies table": [
     ("NCI Biospecimen resources", "nci_biospecimen_resources_jan_2026.pdf"),
     ("Securitas Healthcare logger manual", "t15e_tag_deployment_and_user_guide.pdf")
+    ("Thermo Scientific TSX freezer manual", "tsx_user_manual.pdf"),
+    ("Stirling ultracold freezer manual", "vault_100_manual.pdf"),
     ],
     "Lab bench #1": [
         ("Capit-All Flex manual", "cappit_all_decapper.pdf"),
