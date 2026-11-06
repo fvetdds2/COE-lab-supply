@@ -313,6 +313,7 @@ PRESET_MANUALS = {
             ("Boekel Incubator manual", "incubator_135000_manual.pdf"),
             ("Boekel Incubator cleaning instruction", "incubator_cleaning_procedure.pdf"),
             ("InTemp CX405 manual", "intemp_cx405_manual.pdf"),
+            ("Zymo Research DNA/RNA Magbead protocol", "zymo_dna_rna_magbead.pdf"),
             ("Integra VIAFLO 96/384 Pipette System demonstration", "https://www.youtube.com/watch?v=PC9eAISGE1o"),
     ],
 }
