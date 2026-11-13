@@ -30,7 +30,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 # Bumped whenever app.py starts relying on something new in this module.
-CORE_VERSION = 11
+CORE_VERSION = 12
 
 INVENTORY_TAB = "Inventory"
 LOG_TAB = "Change log"
@@ -56,54 +56,56 @@ CALIBRATION_DUE_SOON_DAYS = 30
 # None means the place is not drawn on the map yet. Staff can move pins, add notes and add
 # places in the app; those changes are saved in the Locations tab and override these defaults.
 PRESET_PLACES = [
-    # cold storage room 5147. Pins mark main places only (a badge in a free corner of each box on lab_map.png,
-    # in % across and down). Cabinets, drawers and shelves are listed in their place's card instead of
-    # getting their own pin, so the map stays readable; see parent_place().
-    ("Liquid nitrogen tank", 17.0, 10.0),
-    ("-80 °C freezer C (T4C plasma/serum)", 28.0, 10.0),
-    ("4 °C fridge (chemicals)", 37.0, 10.0),
-    ("-80 °C freezer B (DNA/RNA)", 46.0, 10.0),
-    ("-80 °C freezer D (DNA/RNA)", 56.0, 10.0),
-    ("-20 °C freezer E (chemicals)", 65.0, 10.0),
-    ("Storage supply cabinet", 75.0, 10.0),
-    ("storage supply shelf", 90.0, 10.0),
-    ("Cart #1", 77.0, 22.0),
-    ("Cart #2", 86.0, 22.0),
-    ("-20 °C freezer F", 28.0, 35.0),
-    ("-80 °C freezer A (T4C plasma/serum)", 37.0, 35.0),
-    ("Freezer supplies table", 51.0, 35.0),
-    ("Ice machine", 62.0, 35.0),
-    ("Sink #3", 77.0, 35.0),
+    # Recalibrated 2026-11-13 for the rotated/redrawn floor plan (room 5149 on the left, room 5147
+    # cold storage on the right). Pins mark main places only (a badge in a free corner of each box on
+    # lab_map.png, in % across and down). Cabinets, drawers and shelves are listed in their place's
+    # card instead of getting their own pin, so the map stays readable; see parent_place().
+    # cold storage room 5147 (right side of the floor plan)
+    ("Liquid nitrogen tank", 88.0, 14.0),
+    ("-80 °C freezer C (T4C plasma/serum)", 88.0, 24.5),
+    ("4 °C fridge (chemicals)", 88.0, 34.0),
+    ("-80 °C freezer B (DNA/RNA)", 88.0, 50.75),
+    ("-80 °C freezer D (DNA/RNA)", 88.0, 42.5),
+    ("-20 °C freezer E (chemicals)", 88.0, 59.25),
+    ("Storage supply cabinet", 88.0, 68.0),
+    ("storage supply shelf", 88.0, 78.0),
+    ("Cart #1", 71.0, 73.0),
+    ("Cart #2", 71.0, 81.0),
+    ("-20 °C freezer F", 58.0, 20.0),
+    ("-80 °C freezer A (T4C plasma/serum)", 58.0, 29.0),
+    ("Freezer supplies table", 58.0, 42.0),
+    ("Ice machine", 58.0, 55.0),
+    ("Sink #3", 58.0, 67.0),
     ("Freezer box cabinet 1", None, None),
     ("Freezer box cabinet 2", None, None),
-    # main lab 5149
-    ("Desk #1, delivery drop-off", 19.0, 44.0),
-    ("PPE station", 49.0, 44.0),
-    ("Lab bench #1", 70.0, 45.0),
+    # main lab 5149 (left side of the floor plan)
+    ("Desk #1, delivery drop-off", 48.0, 24.0),
+    ("PPE station", 48.0, 50.0),
+    ("Lab bench #1", 48.0, 73.0),
     ("Supply cabinet 1, upper", None, None),
     ("Supply cabinet 1, lower", None, None),
     ("Supply cabinet 2, upper", None, None),
     ("Supply cabinet 2, lower", None, None),
-    ("Lab bench #7, specimen prep", 48.0, 63.0),
-    ("Lab bench #6, extraction", 48.0, 71.0),
-    ("Sink #1", 27.0, 67.0),
-    ("Sink #2", 74.0, 67.0),
-    ("Desk #4", 92.0, 60.0),
-    ("Desk #3", 92.0, 71.0),
-    ("Lab bench #2, centrifuge", 12.0, 72.0),
-    ("Lab bench #3, KingFisher", 17.0, 91.0),
+    ("Lab bench #7, specimen prep", 32.0, 48.0),
+    ("Lab bench #6, extraction", 26.0, 48.0),
+    ("Sink #1", 25.0, 24.0),
+    ("Sink #2", 25.0, 65.0),
+    ("Desk #4", 33.0, 86.0),
+    ("Desk #3", 23.0, 86.0),
+    ("Lab bench #2, centrifuge", 28.0, 11.0),
+    ("Lab bench #3, KingFisher", 13.0, 14.0),
     ("Supply cabinet 3, upper", None, None),
     ("Supply cabinet 3, lower", None, None),
-    ("Cart A", 29.0, 91.0),
-    ("Desk #2", 37.0, 91.0),
-    ("Bench #4", 46.0, 91.0),
+    ("Cart A", 13.0, 25.0),
+    ("Desk #2", 13.0, 36.0),
+    ("Bench #4", 13.0, 48.0),
     ("Supply cabinet 4, upper", None, None),
     ("Supply cabinet 4, lower", None, None),
-    ("Cart B", 65.0, 91.0),
-    ("BSC #1", 67.0, 91.0),
-    ("Chemical hood", 79.0, 91.0),
-    ("Flammables cabinet", 79.0, 87.0),
-    ("Bench #5", 92.0, 91.0),
+    ("Cart B", 13.0, 59.0),
+    ("BSC #1", 13.0, 68.0),
+    ("Chemical hood", 13.0, 78.0),
+    ("Flammables cabinet", 13.0, 80.0),
+    ("Bench #5", 13.0, 88.0),
     # room 5147 storage spots (listed under their place, no pin of their own)
     ("Sink #3, supply cabinet 17", None, None),
     ("Sink #3, supply cabinet 18", None, None),
