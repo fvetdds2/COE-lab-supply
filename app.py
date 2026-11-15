@@ -390,6 +390,8 @@ PAGE_CSS = """
        border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.35); text-decoration: none !important;
        line-height: 1; cursor: pointer; }
 a.mpin, a.mpin:visited, a.mpin:hover { color: #fff; }
+/* on-map pins show no count text (see place_card() for the full number, off the image) -- plain dot */
+a.mpin { min-width: 0; width: 18px; height: 18px; padding: 0; border-radius: 50%; }
 a.mpin:hover { transform: translate(-50%, -50%) scale(1.2); z-index: 3; }
 .mpin.low { background: #b45309; }
 .mpin.out { background: #b42318; }
@@ -1080,8 +1082,8 @@ def place_of(location: str, mains: dict) -> tuple[str, str]:
 
 
 def map_html(uri: str, pins: list[dict], highlight: str | None = None, moved: tuple | None = None) -> str:
-    """The floor plan with one badge per place: the number of supplies stored there (incl. its cabinets
-    and drawers), colored by stock state. Hover shows the name; a click jumps to the place's card."""
+    """The floor plan with one plain pin per place, colored by stock state (no count shown on the image
+    itself). Hover shows the name and what's stored; a click jumps to the place's full card below."""
     marks = []
     for p in pins:
         x, y = moved if moved and p["name"] == highlight else (p["x"], p["y"])
@@ -1092,7 +1094,7 @@ def map_html(uri: str, pins: list[dict], highlight: str | None = None, moved: tu
         tip += f", {p['low']} low or out" if p["low"] else ""
         cls = f"mpin {p['state']}" + ((" sel" if p["name"] == highlight else " dim") if highlight else "")
         marks.append(f'<a class="{cls}" href="#{slug(p["name"])}" style="left:{x}%;top:{y}%;" '
-                     f'title="{html.escape(tip)}" aria-label="{html.escape(tip)}">{n or ""}</a>')
+                     f'title="{html.escape(tip)}" aria-label="{html.escape(tip)}"></a>')
     return (f'<div class="map-scroll"><div class="map-wrap"><img src="{uri}" alt="Lab floor plan">'
             f'{"".join(marks)}</div></div>')
 
@@ -1225,8 +1227,8 @@ def map_view(items: list[dict]) -> None:
         st.markdown(map_html(uri, places, highlight), unsafe_allow_html=True)
         st.markdown('<div class="map-key">' + "".join(f'<span><i style="background:{c};"></i>{t}</span>'
                                                       for _, c, t in PIN_KEY)
-                    + "<span>The number is how many supplies are kept there. Tap a pin to see which cabinet "
-                      "or drawer.</span></div>", unsafe_allow_html=True)
+                    + "<span>Tap a pin to jump to what's stored there, including which cabinet or "
+                      "drawer.</span></div>", unsafe_allow_html=True)
     else:
         st.info("The map picture is missing. Put lab_map.png in the same folder as app.py.")
 
