@@ -211,10 +211,28 @@ def load_map_checks(_sheet: ic.InventorySheet) -> tuple[dict, list[str]]:
     return _sheet.renamed_places_in_use(), _sheet.saved_pin_positions()
 
 
+@st.cache_data(ttl=REFRESH_SECONDS, show_spinner=False)
+def load_location_details(_sheet: ic.InventorySheet) -> list[dict]:
+    return _sheet.location_details()
+
+
+@st.cache_data(ttl=REFRESH_SECONDS, show_spinner=False)
+def load_capacity_details(_sheet: ic.InventorySheet) -> list[dict]:
+    return _sheet.capacity_details()
+
+
+@st.cache_data(ttl=REFRESH_SECONDS, show_spinner=False)
+def load_equipment_details(_sheet: ic.InventorySheet) -> list[dict]:
+    return _sheet.equipment_details()
+
+
 def refresh() -> None:
     load_items.clear()  # every session re-reads the sheet after a write
     load_locations.clear()
     load_map_checks.clear()
+    load_location_details.clear()
+    load_capacity_details.clear()
+    load_equipment_details.clear()
 
 
 # --------------------------------------------------------------------------- helpers
@@ -625,6 +643,18 @@ def remember_location(name: str) -> str:
     if name and name.lower() not in {k.lower() for k in location_options([])}:
         name = sheet.add_location(name, user)
     return name
+
+
+def location_details() -> list[dict]:
+    return sheet.location_details() if demo else load_location_details(sheet)
+
+
+def capacity_details() -> list[dict]:
+    return sheet.capacity_details() if demo else load_capacity_details(sheet)
+
+
+def equipment_details() -> list[dict]:
+    return sheet.equipment_details() if demo else load_equipment_details(sheet)
 
 
 def current_items() -> list[dict]:
@@ -1165,13 +1195,13 @@ def build_places(details: list[dict], rows: list[Stock]) -> tuple[list[dict], di
 
 def map_view(items: list[dict]) -> None:
     st.subheader("Lab map")
-    details = sheet.location_details()
+    details = location_details()
     rows = stock_rows(items)
     places, mains = build_places(details, rows)
     by_name = {p["name"]: p for p in places}
-    cap_by_name = {d["name"].lower(): d for d in sheet.capacity_details()}
+    cap_by_name = {d["name"].lower(): d for d in capacity_details()}
     equip_by_place: dict[str, list[dict]] = {}
-    for d in sheet.equipment_details():
+    for d in equipment_details():
         if d.get("place"):
             equip_by_place.setdefault(d["place"].lower(), []).append(d)
     renamed, moved_pins = ((sheet.renamed_places_in_use(items), sheet.saved_pin_positions()) if demo
@@ -1336,7 +1366,7 @@ def map_view(items: list[dict]) -> None:
         if "location_error" in st.session_state:
             st.error(st.session_state.pop("location_error"))
 
-    cap_list = sheet.capacity_details()
+    cap_list = capacity_details()
     if cap_list:
         with st.expander("Update sample count", icon=":material/inventory:"):
             cap_names = [d["name"] for d in cap_list]
@@ -1358,7 +1388,7 @@ def map_view(items: list[dict]) -> None:
                 except ic.InventoryError as exc:
                     st.error(str(exc))
 
-    equip_list = sheet.equipment_details()
+    equip_list = equipment_details()
     if equip_list:
         overdue = sum(1 for e in equip_list if e["status"] == "overdue")
         due_soon = sum(1 for e in equip_list if e["status"] == "due_soon")
