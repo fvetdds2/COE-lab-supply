@@ -297,6 +297,8 @@ PRESET_MANUALS = {
         ("Multidrop Combi+ manual", "multidrop_combi_user_manual.pdf"),
         ("Eppendorf Pipette", "eppendorf_pipette_manual.pdf"),
         ("INTEGRA Electronic Pipette manual", "integra_viaflo_epipettes_manual.pdf"),
+        ("Zymo DNA magbead protocol", "zymo_dna_rna_magbead.pdf"),
+        ("Vault 100 manual", "vault_100_manual.pdf"),
     ],
     "BSC #1": [
         ("MagMax DNA Multi-Sample Kit", "magmax_dna_multi_sample_kit.pdf"),
@@ -307,6 +309,7 @@ PRESET_MANUALS = {
     ],
     "Freezer supplies table": [
     ("NCI Biospecimen resources", "nci_biospecimen_resources_jan_2026.pdf"),
+    ("T15e tag manual", "t15e_tag_deployment_and_user_guide.pdf"),
     ],
     "Lab bench #1": [
         ("Capit-All Flex manual", "cappit_all_decapper.pdf"),
