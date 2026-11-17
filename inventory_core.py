@@ -311,8 +311,11 @@ PRESET_MANUALS = {
     ("NCI Biospecimen resources", "nci_biospecimen_resources_jan_2026.pdf"),
     ("T15e tag manual", "t15e_tag_deployment_and_user_guide.pdf"),
     ],
+    "Ice machine": [
+    ("Scotsman ice machine manual", "scotsman_ice_system_un0815AX.pdf")
+    ],
     "Lab bench #1": [
-        ("Capit-All Flex manual", "cappit_all_decapper.pdf"),
+        ("Capit-All Flex manual", "capit_all_decapper.pdf"),
         ("8-Channel Decapper manual", "8_channel_decapper.pdf"),
     ],
     "Bench #4": [
