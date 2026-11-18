@@ -302,6 +302,7 @@ PRESET_MANUALS = {
     ],
     "BSC #1": [
         ("MagMax DNA Multi-Sample Kit", "magmax_dna_multi_sample_kit.pdf"),
+        ("MagMax Saliva DNA extraction protocol", "maxmag_saliva_protocol"),
     ],
     "Lab bench #7, specimen prep": [
         ("BioMicroLab Scan quick guide", "biomicrolab_scan_quick_guide.pdf"),
